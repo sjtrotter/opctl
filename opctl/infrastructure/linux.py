@@ -1,72 +1,48 @@
-from abc import ABC, abstractmethod
-from typing import List, Dict
+import subprocess
+from typing import List
+from opctl.domain.interfaces import ISystemAdapter, INetworkAdapter, IFirewallAdapter
 
-class ISystemAdapter(ABC):
-    """Controls OS-level identity."""
-    @abstractmethod
+class LinuxBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter):
+    """Concrete implementation of all OS interactions for Linux."""
+    
+    # --- ISystemAdapter ---
     def set_hostname(self, hostname: str) -> None:
         pass
-        
-    @abstractmethod
-    def get_hostname(self) -> str:
-        pass
 
-class INetworkAdapter(ABC):
-    """Controls NIC hardware and Layer 3 routing."""
-    @abstractmethod
+    def get_hostname(self) -> str:
+        return "ghost-01" # Placeholder
+
+    # --- INetworkAdapter ---
     def set_link_state(self, interface: str, state: str) -> None:
         pass
-    
-    @abstractmethod
+
     def set_mac_address(self, interface: str, mac: str) -> None:
         pass
-        
-    @abstractmethod
+
     def get_mac_address(self, interface: str) -> str:
-        pass
-    
-    @abstractmethod
+        return "00:11:22:33:44:55" # Placeholder
+
     def configure_static(self, interface: str, ip: str, gateway: str, dns_servers: List[str]) -> None:
         pass
-    
-    @abstractmethod
+
     def configure_dhcp(self, interface: str) -> None:
         pass
-        
-    @abstractmethod
-    def get_ip_address(self, interface: str) -> str:
-        pass
 
-class IFirewallAdapter(ABC):
-    """Controls packet filtering. Segregated by protocol for safety and simplicity."""
-    @abstractmethod
+    def get_ip_address(self, interface: str) -> str:
+        return "192.168.1.100" # Placeholder
+
+    # --- IFirewallAdapter ---
     def flush_managed_rules(self) -> None:
         pass
 
-    # --- IPv4 Contracts ---
-    @abstractmethod
     def apply_ipv4_blocks(self, cidrs: List[str], port_overrides: List[str]) -> None:
         pass
 
-    @abstractmethod
     def apply_ipv4_allows(self, cidrs: List[str], port_overrides: List[str]) -> None:
         pass
 
-    # --- IPv6 Contracts ---
-    @abstractmethod
     def apply_ipv6_blocks(self, cidrs: List[str], port_overrides: List[str]) -> None:
         pass
 
-    @abstractmethod
     def apply_ipv6_allows(self, cidrs: List[str], port_overrides: List[str]) -> None:
-        pass
-
-class IPolicyRepository(ABC):
-    """Handles persistence of the Aggregate Root state."""
-    @abstractmethod
-    def load_state(self) -> dict:
-        pass
-
-    @abstractmethod
-    def save_state(self, state: dict) -> None:
         pass

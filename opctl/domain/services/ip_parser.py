@@ -75,6 +75,12 @@ class IPParser:
     """
     @staticmethod
     def parse(input_str: str) -> Set[Union[ipaddress.IPv4Network, ipaddress.IPv6Network]]:
+        # Explicitly declare the mixed type to satisfy strict typing
+        result: Set[Union[ipaddress.IPv4Network, ipaddress.IPv6Network]] = set()
+        
         if ':' in input_str:
-            return IPv6Parser.parse(input_str)
-        return IPv4Parser.parse(input_str)
+            result.update(IPv6Parser.parse(input_str))
+        else:
+            result.update(IPv4Parser.parse(input_str))
+            
+        return result

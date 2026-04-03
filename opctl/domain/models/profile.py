@@ -1,3 +1,4 @@
+from typing import Optional
 from .identity import IdentityProfile
 from .interface import InterfaceProfile
 from .policy import OpPolicy
@@ -7,7 +8,7 @@ class OpProfile:
     THE AGGREGATE ROOT. 
     Represents the complete, declarative state of the cyber operations workstation.
     """
-    def __init__(self, state_dict: dict = None):
+    def __init__(self, state_dict: Optional[dict] = None):
         if state_dict is None:
             state_dict = {}
 

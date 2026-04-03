@@ -1,6 +1,6 @@
 import platform
-from .backends.linux import LinuxBackend
-from .backends.windows import WindowsBackend
+from .infrastructure.linux import LinuxBackend
+from .infrastructure.windows import WindowsBackend
 
 def get_os_interface():
     """Factory method to return the correct OS backend."""
