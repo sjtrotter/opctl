@@ -1,11 +1,11 @@
 {
   "identity": {
-    "hostname": "",
-    "mac_address": "",
-    "randomize_mac": false
+    "hostname": ""
   },
   "interface": {
     "name": "Wi-Fi",
+    "mac_address": "",
+    "randomize_mac": false,
     "mode": "dhcp",
     "ip_address": "",
     "gateway": "",
@@ -13,7 +13,7 @@
   },
   "policy": {
     "trusted": [],
-    "targets": [],
+    "target": [],
     "excluded": []
   }
 }
