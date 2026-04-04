@@ -1,0 +1,19 @@
+{
+  "identity": {
+    "hostname": "",
+    "mac_address": "",
+    "randomize_mac": false
+  },
+  "interface": {
+    "name": "Wi-Fi",
+    "mode": "dhcp",
+    "ip_address": "",
+    "gateway": "",
+    "dns_servers": []
+  },
+  "policy": {
+    "trusted": [],
+    "targets": [],
+    "excluded": []
+  }
+}

@@ -1,141 +1,112 @@
 import argparse
 import sys
-import json
 
 from . import get_os_interface
 from .adapters.json_repository import JsonPolicyRepository
 from .use_cases import (
-    ViewStatusUseCase, 
+    StatusReportUseCase, 
     CommitPolicyUseCase, 
     BulkConfigureUseCase,
     ImportConfigUseCase,
     ExportConfigUseCase,
-    RemoveRuleUseCase
+    RemoveRuleUseCase,
+    ListInterfacesUseCase
 )
 
-def main():
-    # --- TOP LEVEL PARSER ---
-    parser = argparse.ArgumentParser(
-        prog="opctl", 
-        description="Tactical Workstation Bootstrapper - Provision and secure operational environments.",
-        epilog="Run 'opctl <command> --help' for detailed information on a specific command.",
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="opctl", description="Tactical Workstation Bootstrapper")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # --- 1. CORE OPERATIONS ---
-    subparsers.add_parser("status", help="Preview configuration and math before committing")
-    subparsers.add_parser("commit", help="Execute the Radio Silence provisioning flow")
+    # status / commit / list
+    subparsers.add_parser("status", help="Preview configuration diff")
+    subparsers.add_parser("commit", help="Execute Radio Silence flow")
+    subparsers.add_parser("list-interfaces", help="List available OS interfaces")
 
-    # --- 2. MODULAR CONFIGURATION ---
-    parser_id = subparsers.add_parser("set-identity", help="Stage hostname and MAC")
-    parser_id.add_argument("--hostname", metavar="NAME", help="Desired hostname")
-    parser_id.add_argument("--mac", metavar="MAC", help="Specific MAC or 'random'")
+    # add / rm
+    p_add = subparsers.add_parser("add")
+    p_add.add_argument("bucket", choices=["target", "trusted", "exclude"])
+    p_add.add_argument("networks", nargs='+')
 
-    parser_add = subparsers.add_parser("add", help="Add rules to a policy bucket")
-    parser_add.add_argument("bucket", choices=["target", "trusted", "exclude"])
-    parser_add.add_argument("networks", nargs='+', metavar="IP[:PORT][/CIDR]", help="One or more rules (e.g., 10.0.0.0/8, 192.168.1.50:443)")
+    p_rm = subparsers.add_parser("rm")
+    p_rm.add_argument("bucket", choices=["target", "trusted", "exclude"])
+    p_rm.add_argument("networks", nargs='+')
 
-    parser_rm = subparsers.add_parser("rm", help="Remove rules from a policy bucket")
-    parser_rm.add_argument("bucket", choices=["target", "trusted", "exclude"])
-    parser_rm.add_argument("networks", nargs='+', metavar="IP[:PORT][/CIDR]", help="One or more rules to explicitly remove")
+    # configure
+    p_conf = subparsers.add_parser("configure")
+    p_conf.add_argument("-H", "--hostname")
+    p_conf.add_argument("-m", "--mac")
+    p_conf.add_argument("-i", "--interface")
+    p_conf.add_argument("--mode", choices=["dhcp", "static"], default="dhcp")
+    p_conf.add_argument("-t", "--targets", nargs='+')
+    p_conf.add_argument("-T", "--trusted", nargs='+')
+    p_conf.add_argument("-e", "--excludes", nargs='+')
+    p_conf.add_argument("-c", "--commit", action="store_true")
 
-    # --- 3. BULK CONFIGURATION (The God Command) ---
-    parser_conf = subparsers.add_parser(
-        "configure", 
-        help="Define the entire configuration via flags",
-        description="The God Command. Provision the entire operational workstation in a single line.",
-        epilog="""
-Examples:
-  # Rapid tactical deployment with automatic commit
-  opctl configure -H ghost-01 -m random -i eth0 -t 192.168.1.0/24 -c
+    # import / export
+    p_imp = subparsers.add_parser("import")
+    p_imp.add_argument("file")
+    p_imp.add_argument("-c", "--commit", action="store_true")
 
-  # Stage a complex setup: Broad block, but allow a specific port
-  opctl configure -H jump-box -e 10.0.0.0/8 -t 10.1.2.3:80
-        """,
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    
-    # Argument Groups for clean UI
-    id_group = parser_conf.add_argument_group("Identity Flags")
-    id_group.add_argument("-H", "--hostname", metavar="NAME", help="Set Hostname")
-    id_group.add_argument("-m", "--mac", metavar="MAC", help="Set MAC address or 'random'")
-
-    net_group = parser_conf.add_argument_group("Network Flags")
-    net_group.add_argument("-i", "--interface", metavar="IFACE", help="Set outbound interface (e.g., eth0)")
-    net_group.add_argument("--mode", choices=["dhcp", "static"], default="dhcp", help="IP assignment mode (default: dhcp)")
-
-    pol_group = parser_conf.add_argument_group("Policy/Firewall Flags")
-    pol_group.add_argument("-t", "--targets", nargs='+', metavar="IP[:PORT][/CIDR]", help="Target networks or specific ports (Egress only)")
-    pol_group.add_argument("-T", "--trusted", nargs='+', metavar="IP[:PORT][/CIDR]", help="Trusted networks or specific ports (Bi-directional)")
-    pol_group.add_argument("-e", "--excludes", nargs='+', metavar="IP[:PORT][/CIDR]", help="Excluded networks or specific ports (Drop)")
-    
-    exec_group = parser_conf.add_argument_group("Execution Flags")
-    exec_group.add_argument("-c", "--commit", action="store_true", help="Immediately commit after configuring")
-
-    # --- 4. PLAYBOOK IMPORT/EXPORT ---
-    parser_import = subparsers.add_parser("import", help="Load a JSON playbook")
-    parser_import.add_argument("file", help="Path to the .json playbook")
-    parser_import.add_argument("-c", "--commit", action="store_true", help="Immediately commit the loaded playbook")
-
-    parser_export = subparsers.add_parser("export", help="Export current config to a JSON playbook")
-    parser_export.add_argument("file", help="Destination path for the .json playbook")
+    p_exp = subparsers.add_parser("export")
+    p_exp.add_argument("file")
 
     args = parser.parse_args()
-
-    # --- DEPENDENCY INJECTION ---
     repo = JsonPolicyRepository("session.json") 
+    
     try:
         os_adapter = get_os_interface()
     except NotImplementedError as e:
         print(f"[!] OS Error: {e}")
         sys.exit(1)
 
-    # --- ROUTING ---
     try:
         if args.command == "status":
-            report = ViewStatusUseCase(repo, os_adapter, os_adapter).execute()
-            print(json.dumps(report, indent=2))
+            # The Use Case now handles all formatting. CLI just prints.
+            report_lines = StatusReportUseCase(repo, os_adapter, os_adapter).execute()
+            for line in report_lines:
+                print(line)
             
         elif args.command == "commit":
-            print("[*] Committing policy via Radio Silence flow...")
             CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
-            print("[+] Policy successfully committed. Interface is hot.")
+            print("[+] Policy successfully committed.")
 
-        elif args.command == "set-identity":
-            BulkConfigureUseCase(repo).execute({"hostname": args.hostname, "mac": args.mac})
-            print("[+] Identity staged.")
+        elif args.command == "list-interfaces":
+            res = ListInterfacesUseCase(repo, os_adapter).execute()
+            print("\n--- Available OS Network Interfaces ---")
+            for iface in res["interfaces"]:
+                m = "[*]" if iface["is_staged"] else "   "
+                print(f"{m} {iface['name']} | MAC: {iface['mac']} | IP: {iface['ip']}")
 
         elif args.command == "add":
             kwargs = {f"{args.bucket}s": args.networks} 
             BulkConfigureUseCase(repo).execute(kwargs)
-            print(f"[+] Added {len(args.networks)} rule(s) to the '{args.bucket}' bucket.")
+            print(f"[+] Added rules to {args.bucket}.")
 
         elif args.command == "rm":
             RemoveRuleUseCase(repo).execute(args.bucket, args.networks)
-            print(f"[-] Removed {len(args.networks)} rule(s) from the '{args.bucket}' bucket.")
+            print(f"[-] Removed rules from {args.bucket}.")
 
         elif args.command == "configure":
             BulkConfigureUseCase(repo).execute(vars(args))
             print("[+] Configuration staged.")
             if args.commit:
-                print("[*] Committing policy...")
                 CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
-                print("[+] Policy successfully committed. Interface is hot.")
+                print("[+] Policy committed.")
 
         elif args.command == "import":
             ImportConfigUseCase(repo).execute(args.file)
-            print(f"[+] Playbook '{args.file}' successfully imported and staged.")
+            print(f"[+] Imported {args.file}.")
             if args.commit:
-                print("[*] Committing loaded playbook...")
                 CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
-                print("[+] Policy successfully committed. Interface is hot.")
+                print("[+] Policy committed.")
 
         elif args.command == "export":
             ExportConfigUseCase(repo).execute(args.file)
-            print(f"[+] Current session successfully exported to '{args.file}'.")
+            print(f"[+] Exported current config to {args.file}.")
 
     except Exception as e:
+        # This is where your error was caught, likely because the CLI 
+        # was trying to treat 'report_lines' (a list) as a dict.
         print(f"\n[!] ERROR: {str(e)}")
         sys.exit(1)
 

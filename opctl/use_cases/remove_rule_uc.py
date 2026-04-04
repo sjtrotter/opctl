@@ -1,4 +1,4 @@
-from opctl.domain.models import OpProfile
+from opctl.domain.models.profile import OpProfile
 from opctl.domain.interfaces import IPolicyRepository
 
 class RemoveRuleUseCase:
@@ -9,7 +9,8 @@ class RemoveRuleUseCase:
 
     def execute(self, bucket: str, networks: list) -> None:
         staged_dict = self.repo.load_state()
-        profile = OpProfile(staged_dict)
+        # Use Factory to satisfy strict typing
+        profile = OpProfile.from_dict(staged_dict)
 
         # Remove the targets from the Domain
         for net in networks:

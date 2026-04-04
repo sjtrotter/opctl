@@ -1,4 +1,4 @@
-from opctl.domain.models import OpProfile
+from opctl.domain.models.profile import OpProfile
 from opctl.domain.interfaces import IPolicyRepository
 
 class BulkConfigureUseCase:
@@ -8,24 +8,26 @@ class BulkConfigureUseCase:
 
     def execute(self, config_args: dict) -> None:
         staged_dict = self.repo.load_state()
-        profile = OpProfile(staged_dict)
+        # Use the factory method to satisfy strict type checking
+        profile = OpProfile.from_dict(staged_dict)
 
-        # 1. Update Identity
         if config_args.get("hostname"):
             profile.identity.hostname = config_args["hostname"]
-        if config_args.get("mac"):
-            if config_args["mac"].lower() == "random":
-                profile.identity.randomize_mac = True
-            else:
-                profile.identity.mac_address = config_args["mac"]
 
-        # 2. Update Interface
         if config_args.get("interface"):
             profile.interface.name = config_args["interface"]
+            
+        if config_args.get("mac"):
+            if config_args["mac"].lower() == "random":
+                profile.interface.randomize_mac = True
+                profile.interface.mac_address = ""
+            else:
+                profile.interface.mac_address = config_args["mac"]
+                profile.interface.randomize_mac = False
+                
         if config_args.get("mode"):
             profile.interface.mode = config_args["mode"]
 
-        # 3. Update Policy Buckets (Append)
         for t in config_args.get("targets") or []:
             profile.policy.add_rule("target", t)
         for t in config_args.get("trusted") or []:

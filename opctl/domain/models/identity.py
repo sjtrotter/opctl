@@ -1,11 +1,14 @@
 from dataclasses import dataclass
+from typing import Optional
 
 @dataclass
 class IdentityProfile:
-    """Value Object representing the OS-level identity."""
     hostname: str = ""
-    mac_address: str = ""
-    randomize_mac: bool = False
 
-    def is_configured(self) -> bool:
-        return bool(self.hostname or self.mac_address or self.randomize_mac)
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "IdentityProfile":
+        if not data: return cls()
+        return cls(hostname=data.get("hostname", ""))
+
+    def to_dict(self) -> dict:
+        return {"hostname": self.hostname}

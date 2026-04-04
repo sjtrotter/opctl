@@ -4,35 +4,36 @@ from .interface import InterfaceProfile
 from .policy import OpPolicy
 
 class OpProfile:
-    """
-    THE AGGREGATE ROOT. 
-    Represents the complete, declarative state of the cyber operations workstation.
-    """
-    def __init__(self, state_dict: Optional[dict] = None):
-        if state_dict is None:
-            state_dict = {}
+    def __init__(self, identity: Optional[IdentityProfile] = None, 
+                 interface: Optional[InterfaceProfile] = None, 
+                 policy: Optional[OpPolicy] = None):
+        self.identity = identity or IdentityProfile()
+        self.interface = interface or InterfaceProfile()
+        self.policy = policy or OpPolicy()
 
-        self.identity = IdentityProfile(**state_dict.get("identity", {}))
-        self.interface = InterfaceProfile(**state_dict.get("interface", {}))
+    @classmethod
+    def from_dict(cls, state_dict: Optional[dict]) -> "OpProfile":
+        data = state_dict or {}
+        policy = OpPolicy()
         
-        self.policy = OpPolicy()
-        policy_data = state_dict.get("policy", {})
-        
-        for rule in policy_data.get("trusted", []):
-            self.policy.add_rule("trusted", rule)
-        for rule in policy_data.get("targets", []):
-            self.policy.add_rule("target", rule)
-        for rule in policy_data.get("excluded", []):
-            self.policy.add_rule("excluded", rule)
+        pol_data = data.get("policy", {})
+        for zone in ["trusted", "target", "excluded"]:
+            for rule in pol_data.get(zone, []):
+                policy.add_rule(zone, rule)
+
+        return cls(
+            identity=IdentityProfile.from_dict(data.get("identity")),
+            interface=InterfaceProfile.from_dict(data.get("interface")),
+            policy=policy
+        )
 
     def to_dict(self) -> dict:
-        """Serializes the aggregate back to a raw dictionary for repository persistence."""
         return {
-            "identity": self.identity.__dict__,
-            "interface": self.interface.__dict__,
+            "identity": self.identity.to_dict(),
+            "interface": self.interface.to_dict(),
             "policy": {
                 "trusted": list(self.policy.raw_trusted),
-                "targets": list(self.policy.raw_targets),
+                "target": list(self.policy.raw_targets),
                 "excluded": list(self.policy.raw_excluded)
             }
         }
