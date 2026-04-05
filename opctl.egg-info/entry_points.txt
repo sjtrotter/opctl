@@ -1,0 +1,2 @@
+[console_scripts]
+opctl = opctl.cli:main
