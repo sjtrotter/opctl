@@ -13,100 +13,131 @@ from .use_cases import (
     ListInterfacesUseCase
 )
 
-def main() -> None:
-    parser = argparse.ArgumentParser(prog="opctl", description="Tactical Workstation Bootstrapper")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+def main():
+    # allow_abbrev=True is default in Python 3.5+, allowing --int to match --interface
+    parser = argparse.ArgumentParser(
+        prog="opctl", 
+        description="OPerations ConTroLler (OPCTL) - A CLI tool for staging and committing network configurations with OPSEC in mind.",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
 
-    # status / commit / list
-    subparsers.add_parser("status", help="Preview configuration diff")
-    subparsers.add_parser("commit", help="Execute Radio Silence flow")
-    subparsers.add_parser("list-interfaces", help="List available OS interfaces")
+    # --- Information & Execution Flags ---
+    parser.add_argument("-s", "--status", action="store_true", help="Print the configuration and live state")
+    parser.add_argument("-c", "--commit", action="store_true", help="Apply the configuration to hardware")
+    parser.add_argument("-l", "--list-interfaces", action="store_true", help="List available OS interfaces")
+    
+    # --- System & Networking Configuration ---
+    parser.add_argument("-H", "--hostname", type=str, help="Stage the system hostname")
+    parser.add_argument("-i", "--interface", type=str, help="Stage the target interface (e.g., eth0)")
+    parser.add_argument("--mode", choices=["dhcp", "static"], help="Interface routing mode")
+    parser.add_argument("--mac", type=str, help="Interface MAC address (use 'random' for OPSEC)")
+    
+    # --- Firewall Configuration (Using append to allow multiple flags) ---
+    parser.add_argument("-t", "--targets", nargs='+', default=[], help="Stage tactical target networks")
+    parser.add_argument("-T", "--trusted", nargs='+', default=[], help="Stage globally trusted networks")
+    parser.add_argument("-e", "--excludes", nargs='+', default=[], help="Stage globally excluded networks")
+    
+    # --- Modifiers ---
+    parser.add_argument("--add-target", nargs='+', default=[], help="Add to existing targets")
+    parser.add_argument("--rm-target", nargs='+', default=[], help="Remove from existing targets")
+    parser.add_argument("--add-trusted", nargs='+', default=[], help="Add to existing trusted")
+    parser.add_argument("--rm-trusted", nargs='+', default=[], help="Remove from existing trusted")
+    parser.add_argument("--add-exclude", nargs='+', default=[], help="Add to existing excludes")
+    parser.add_argument("--rm-exclude", nargs='+', default=[], help="Remove from existing excludes")
 
-    # add / rm
-    p_add = subparsers.add_parser("add")
-    p_add.add_argument("bucket", choices=["target", "trusted", "exclude"])
-    p_add.add_argument("networks", nargs='+')
-
-    p_rm = subparsers.add_parser("rm")
-    p_rm.add_argument("bucket", choices=["target", "trusted", "exclude"])
-    p_rm.add_argument("networks", nargs='+')
-
-    # configure
-    p_conf = subparsers.add_parser("configure")
-    p_conf.add_argument("-H", "--hostname")
-    p_conf.add_argument("-m", "--mac")
-    p_conf.add_argument("-i", "--interface")
-    p_conf.add_argument("--mode", choices=["dhcp", "static"], default="dhcp")
-    p_conf.add_argument("-t", "--targets", nargs='+')
-    p_conf.add_argument("-T", "--trusted", nargs='+')
-    p_conf.add_argument("-e", "--excludes", nargs='+')
-    p_conf.add_argument("-c", "--commit", action="store_true")
-
-    # import / export
-    p_imp = subparsers.add_parser("import")
-    p_imp.add_argument("file")
-    p_imp.add_argument("-c", "--commit", action="store_true")
-
-    p_exp = subparsers.add_parser("export")
-    p_exp.add_argument("file")
+    # --- File Operations ---
+    parser.add_argument("--import-file", type=str, help="Import a session.json configuration")
+    parser.add_argument("--export-file", type=str, help="Export current state to a file")
 
     args = parser.parse_args()
-    repo = JsonPolicyRepository("session.json") 
     
+    # Dependency Injection
+    repo = JsonPolicyRepository("session.json") 
     try:
         os_adapter = get_os_interface()
     except NotImplementedError as e:
         print(f"[!] OS Error: {e}")
         sys.exit(1)
 
+    # ---------------------------------------------------------
+    # THE EXECUTION PIPELINE
+    # This guarantees operations happen in a safe, logical order
+    # regardless of what order the user typed the flags.
+    # ---------------------------------------------------------
     try:
-        if args.command == "status":
-            # The Use Case now handles all formatting. CLI just prints.
-            report_lines = StatusReportUseCase(repo, os_adapter, os_adapter).execute()
-            for line in report_lines:
-                print(line)
-            
-        elif args.command == "commit":
-            CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
-            print("[+] Policy successfully committed.")
-
-        elif args.command == "list-interfaces":
+        # STEP 1: Info requests that exit early
+        if args.list_interfaces:
             res = ListInterfacesUseCase(repo, os_adapter).execute()
             print("\n--- Available OS Network Interfaces ---")
             for iface in res["interfaces"]:
                 m = "[*]" if iface["is_staged"] else "   "
                 print(f"{m} {iface['name']} | MAC: {iface['mac']} | IP: {iface['ip']}")
+            sys.exit(0)
 
-        elif args.command == "add":
-            kwargs = {f"{args.bucket}s": args.networks} 
-            BulkConfigureUseCase(repo).execute(kwargs)
-            print(f"[+] Added rules to {args.bucket}.")
+        # STEP 2: File Imports
+        if args.import_file:
+            ImportConfigUseCase(repo).execute(args.import_file)
+            print(f"[*] Imported {args.import_file}.")
 
-        elif args.command == "rm":
-            RemoveRuleUseCase(repo).execute(args.bucket, args.networks)
-            print(f"[-] Removed rules from {args.bucket}.")
+        # STEP 3: State Modifications (Configure, Add, Remove)
+        # We group all configuration arguments into a dictionary, filtering out Nones
+        config_kwargs = {
+            "hostname": args.hostname,
+            "interface": args.interface,
+            "mode": args.mode,
+            "mac": args.mac,
+            "targets": args.targets if args.targets else None,
+            "trusted": args.trusted if args.trusted else None,
+            "excludes": args.excludes if args.excludes else None,
+        }
+        config_kwargs = {k: v for k, v in config_kwargs.items() if v is not None}
+        
+        if config_kwargs:
+            BulkConfigureUseCase(repo).execute(config_kwargs)
+            print("[*] Configuration updated in session.")
 
-        elif args.command == "configure":
-            BulkConfigureUseCase(repo).execute(vars(args))
-            print("[+] Configuration staged.")
-            if args.commit:
-                CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
-                print("[+] Policy committed.")
+        if args.add_target:
+            BulkConfigureUseCase(repo).execute({"targets": args.add_target})
+            print(f"[*] Added {len(args.add_target)} to targets.")
+            
+        if args.rm_target:
+            RemoveRuleUseCase(repo).execute("target", args.rm_target)
+            print(f"[*] Removed {len(args.rm_target)} from targets.")
 
-        elif args.command == "import":
-            ImportConfigUseCase(repo).execute(args.file)
-            print(f"[+] Imported {args.file}.")
-            if args.commit:
-                CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
-                print("[+] Policy committed.")
+        if args.add_trusted:
+            BulkConfigureUseCase(repo).execute({"trusted": args.add_trusted})
+            print(f"[*] Added {len(args.add_trusted)} to trusted.")
+            
+        if args.rm_trusted:
+            RemoveRuleUseCase(repo).execute("trusted", args.rm_trusted)
+            print(f"[*] Removed {len(args.rm_trusted)} from trusted.")
 
-        elif args.command == "export":
-            ExportConfigUseCase(repo).execute(args.file)
-            print(f"[+] Exported current config to {args.file}.")
+        if args.add_exclude:
+            BulkConfigureUseCase(repo).execute({"excludes": args.add_exclude})
+            print(f"[*] Added {len(args.add_exclude)} to excludes.")
+            
+        if args.rm_exclude:
+            RemoveRuleUseCase(repo).execute("excludes", args.rm_exclude)
+            print(f"[*] Removed {len(args.rm_exclude)} from excludes.")
+
+        # STEP 4: Reporting
+        if args.status:
+            report_lines = StatusReportUseCase(repo, os_adapter, os_adapter).execute()
+            for line in report_lines:
+                print(line)
+
+        # STEP 5: Execution (The "Send it" phase)
+        if args.commit:
+            print("[*] Engaging Radio Silence and committing config...")
+            CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
+            print("[+] Policy successfully committed.")
+
+        # STEP 6: File Exports
+        if args.export_file:
+            ExportConfigUseCase(repo).execute(args.export_file)
+            print(f"[+] Exported state to {args.export_file}.")
 
     except Exception as e:
-        # This is where your error was caught, likely because the CLI 
-        # was trying to treat 'report_lines' (a list) as a dict.
         print(f"\n[!] ERROR: {str(e)}")
         sys.exit(1)
 
