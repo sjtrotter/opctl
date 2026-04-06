@@ -4,81 +4,107 @@ from .adapters.json_repository import JsonPolicyRepository
 from .cli_parser import build_parser
 from .shell import OpctlShell
 
-# Import Use Cases
+# Use Cases
 from .use_cases.bulk_configure_uc import BulkConfigureUseCase
-from .use_cases.status_report_uc import StatusReportUseCase
 from .use_cases.commit_policy_uc import CommitPolicyUseCase
-from .use_cases.transfer_config_uc import ImportConfigUseCase, ExportConfigUseCase
-from .use_cases.list_interfaces_uc import ListInterfacesUseCase
+from .use_cases.status_report_uc import StatusReportUseCase
 
-def run_pipeline(args, repo, os_adapter):
-    """Executes the single-line command pipeline."""
+def resolve_payload(args):
+    """
+    Translates nested argparse Namespace into a Use Case payload.
+    Logic: Identify the deepest command in the chain and its context.
+    """
+    arg_dict = vars(args)
+    payload = {}
     
-    if args.list_interfaces:
-        res = ListInterfacesUseCase(repo, os_adapter).execute()
-        print("\n--- OS Interfaces ---")
-        for i in res["interfaces"]:
-            print(f"[*] {i['name']} | MAC: {i['mac']} | IP: {i['ip']}")
-        sys.exit(0)
+    # 1. Determine the path taken through the subparsers
+    # Chain will look like: ['configure', 'interface', 'ip']
+    chain = [v for k, v in arg_dict.items() if k.endswith('_cmd') and v]
+    if not chain:
+        return None
 
-    if args.import_file:
-        ImportConfigUseCase(repo).execute(args.import_file)
-        print(f"[*] Imported {args.import_file}.")
+    leaf_cmd = chain[-1]
+    value = arg_dict.get("value")
+    
+    # 2. Identify the active mode (the command prior to the leaf)
+    active_mode = chain[-2] if len(chain) > 1 else "root"
 
-    # Stage Configuration
-    if any([args.hostname, args.interface, args.unmanaged, args.targets, args.trusted, args.excludes]):
-        if any([args.mode, args.ips, args.mac, args.ignore_dhcp_dns]) and not args.interface:
-            print("\n[!] ERROR: -i required for interface settings.")
-            sys.exit(1)
+    # 3. Handle Special Direct Actions
+    if leaf_cmd == "execute":
+        return {"action": "execute"}
+    if leaf_cmd == "show":
+        return {"action": "show"}
 
-        config_kwargs = {
-            "system": {"hostname": args.hostname, "unmanaged_interfaces": args.unmanaged},
-            "interface_name": args.interface,
-            "interface_config": {
-                "mode": args.mode, "ip_addresses": args.ips, 
-                "mac_address": args.mac, "dhcp_ignore_dns": args.ignore_dhcp_dns
-            } if args.interface else None,
-            "targets": args.targets if args.targets else None,
-            "trusted": args.trusted if args.trusted else None,
-            "excludes": args.excludes if args.excludes else None,
+    # 4. Map Configuration Settings to Payload
+    if active_mode == "interface":
+        payload = {
+            "interface_name": arg_dict.get("iface_target"),
+            "interface_config": {leaf_cmd: value}
         }
-        # Clean None values before sending to Use Case
-        config_kwargs = {k: v for k, v in config_kwargs.items() if v is not None}
-        BulkConfigureUseCase(repo).execute(config_kwargs)
+    elif active_mode in ["system", "ntp"]:
+        payload = {active_mode: {leaf_cmd: value}}
+    
+    return payload
 
-    if args.status:
-        for line in StatusReportUseCase(repo, os_adapter, os_adapter).execute():
-            print(line)
-
-    if args.commit:
-        print("[*] Engaging Radio Silence...")
-        CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
-        print("[+] Committed.")
-
-    if args.export_file:
-        ExportConfigUseCase(repo).execute(args.export_file)
+def resolve_abbreviations(args, schema):
+    """
+    Look at sys.argv and expand abbreviations based on the schema.
+    ['conf', 'int', 'eth0'] -> ['configure', 'interface', 'eth0']
+    """
+    new_args = []
+    for token in args:
+        # Don't try to expand flags or interface names (which aren't in schema)
+        if token.startswith('-') or token == "eth0": # Simplified check
+            new_args.append(token)
+            continue
+            
+        matches = [cmd for cmd in schema.keys() if cmd.startswith(token)]
+        if len(matches) == 1:
+            new_args.append(matches[0])
+        else:
+            new_args.append(token)
+    return new_args
 
 def main():
-    repo = JsonPolicyRepository("session.json") 
+    repo = JsonPolicyRepository("session.json")
     try:
         os_adapter = get_os_interface()
     except NotImplementedError as e:
         print(f"[!] OS Error: {e}")
         sys.exit(1)
 
-    # THE TRAFFIC COP
+    # NO ARGS -> SHELL MODE
     if len(sys.argv) == 1:
-        # No flags passed? Enter the shell.
         try:
             OpctlShell(repo, os_adapter).cmdloop()
         except KeyboardInterrupt:
-            print("\nExiting opctl.")
+            print("\nExiting.")
             sys.exit(0)
+        return
+
+    # ARGS -> ONE-LINER MODE
+    parser = build_parser()
+    args = parser.parse_args()
+    
+    payload = resolve_payload(args)
+    if not payload:
+        parser.print_help()
+        sys.exit(1)
+
+    # EXECUTION
+    if payload.get("action") == "execute":
+        print("[*] Engaging Radio Silence... Committing to hardware.")
+        CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
+        print("[+] Done.")
+        
+    elif payload.get("action") == "show":
+        for line in StatusReportUseCase(repo, os_adapter, os_adapter).execute():
+            print(line)
+            
     else:
-        # Flags passed? Run the pipeline.
-        parser = build_parser()
-        args = parser.parse_args()
-        run_pipeline(args, repo, os_adapter)
+        # Standard Configuration Staging
+        BulkConfigureUseCase(repo).execute(payload)
+        print(f"[*] Staged {payload}")
 
 if __name__ == "__main__":
     main()

@@ -47,16 +47,16 @@ class IFirewallAdapter(ABC):
     def flush_managed_rules(self) -> None: pass
 
     @abstractmethod
-    def apply_ipv4_blocks(self, cidrs: List[str], port_overrides: List[str]) -> None: pass
+    def apply_ipv4_blocks(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None: pass
 
     @abstractmethod
-    def apply_ipv4_allows(self, cidrs: List[str], port_overrides: List[str]) -> None: pass
+    def apply_ipv4_allows(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None: pass
 
     @abstractmethod
-    def apply_ipv6_blocks(self, cidrs: List[str], port_overrides: List[str]) -> None: pass
+    def apply_ipv6_blocks(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None: pass
 
     @abstractmethod
-    def apply_ipv6_allows(self, cidrs: List[str], port_overrides: List[str]) -> None: pass
+    def apply_ipv6_allows(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None: pass
 
 class IPolicyRepository(ABC):
     """Handles persistence of the Aggregate Root state."""

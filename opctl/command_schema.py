@@ -1,94 +1,88 @@
-# opctl/command_schema.py
+# The master list of all modes in the application
+GLOBAL_COMMAND = ["root", "configure", "system", "ntp", "policy", "interface"]
 
 COMMAND_SCHEMA = {
-    # === META & ACTION COMMANDS ===
+    # === GLOBAL ACTIONS ===
     "execute": {
-        "flags": ["-x", "--execute"],
-        "action": "store_true",
-        "help": "Apply all staged configurations to the OS hardware",
-        "usage": "execute",
-        "valid_modes": ["root", "system", "policy", "interface"]
+        "category": "Actions",
+        "help": "Commit staged configuration to hardware",
+        "valid_modes": ["root"] 
     },
     "write": {
-        "flags": ["-w", "--write"],
-        "type": str,
-        "nargs": "?", # Optional argument
-        "help": "Save the current configuration (or export to a file)",
+        "category": "Actions",
+        "help": "Save current session to file",
         "usage": "write [filename]",
-        "example": "write backup.json",
-        "valid_modes": ["root", "system", "policy", "interface"]
+        "valid_modes": GLOBAL_COMMAND
     },
     "show": {
-        "flags": ["-s", "--show"],
-        "choices": ["interfaces", "edits"],
-        "help": "Show system and network state",
+        "category": "Actions",
+        "help": "Display live status or staged edits",
         "usage": "show <interfaces|edits>",
-        "example": "show edits",
-        "valid_modes": ["root", "system", "policy", "interface"]
-    },
-    
-    # === NAVIGATION COMMANDS (Shell Only) ===
-    "exit": {
-        "flags": [], "no_cli": True,
-        "help": "Exit current mode or shell",
-        "usage": "exit",
-        "valid_modes": ["root", "system", "policy", "interface"]
-    },
-    "system": {
-        "flags": [], "no_cli": True,
-        "help": "Enter global system config mode",
-        "usage": "system",
-        "valid_modes": ["root"]
-    },
-    "policy": {
-        "flags": [], "no_cli": True,
-        "help": "Enter global firewall policy mode",
-        "usage": "policy",
-        "valid_modes": ["root"]
-    },
-    "interface": {
-        "flags": ["-i", "--interface"],
-        "type": str,
-        "help": "Enter interface config mode (Supports quotes for Windows)",
-        "usage": 'interface <"name">',
-        "example": 'interface "Ethernet 2"',
-        "valid_modes": ["root"]
+        "valid_modes": GLOBAL_COMMAND
     },
 
-    # === CONFIGURATION PARAMETERS ===
-    "mode": {
-        "flags": ["--mode"], "choices": ["dhcp", "static", "promisc"],
-        "help": "Interface routing mode", "usage": "mode <dhcp|static|promisc>",
-        "valid_modes": ["interface"]
+    # === NAVIGATION ===
+    "configure": {
+        "category": "Navigation",
+        "help": "Enter configuration mode",
+        "valid_modes": ["root"]
     },
-    "ip": {
-        "flags": ["-I", "--ips"], "nargs": "+",
-        "help": "Assign IP(s) (CIDR)", "usage": "ip <cidr> [cidr...]",
-        "valid_modes": ["interface"]
+    "system": {
+        "category": "Navigation",
+        "help": "Configure global system settings",
+        "valid_modes": ["configure"]
     },
-    "mac": {
-        "flags": ["--mac"], "type": str,
-        "help": "Interface MAC ('random' for OPSEC)", "usage": "mac <address|random>",
-        "valid_modes": ["interface"]
+    "ntp": {
+        "category": "Navigation",
+        "help": "Configure NTP settings",
+        "valid_modes": ["configure"]
     },
+    "policy": {
+        "category": "Navigation",
+        "help": "Configure global firewall policy",
+        "valid_modes": ["configure"]
+    },
+    "interface": {
+        "category": "Navigation",
+        "help": "Configure a specific network interface",
+        "usage": "interface <name>",
+        "valid_modes": ["configure"]
+    },
+
+    # === SETTINGS ===
     "hostname": {
-        "flags": ["-H", "--hostname"], "type": str,
-        "help": "Set system hostname", "usage": "hostname <name>",
+        "category": "Settings",
+        "help": "Set system hostname",
         "valid_modes": ["system"]
     },
-    "targets": {
-        "flags": ["-t", "--targets"], "nargs": "+",
-        "help": "Add tactical targets", "usage": "targets <cidr> [cidr...]",
-        "valid_modes": ["policy", "interface"]
+    "dns": {
+        "category": "Settings",
+        "nargs": "+",
+        "help": "Set DNS servers",
+        "valid_modes": ["system", "interface"]
     },
-    "trusted": {
-        "flags": ["-T", "--trusted"], "nargs": "+",
-        "help": "Add trusted networks", "usage": "trusted <cidr> [cidr...]",
-        "valid_modes": ["policy", "interface"]
+    "servers": {
+        "category": "Settings",
+        "nargs": "+",
+        "help": "Set NTP servers",
+        "valid_modes": ["ntp"]
     },
-    "excludes": {
-        "flags": ["-e", "--excludes"], "nargs": "+",
-        "help": "Add globally excluded networks", "usage": "excludes <cidr> [cidr...]",
-        "valid_modes": ["policy", "interface"]
+    "ip": {
+        "category": "Settings",
+        "nargs": "+",
+        "help": "Set static IP addresses",
+        "valid_modes": ["interface"]
+    },
+    "enable": {
+        "category": "Settings",
+        "help": "Enable service or interface",
+        "action": "store_true",
+        "valid_modes": ["interface", "ntp"]
+    },
+    "disable": {
+        "category": "Settings",
+        "help": "Disable service or interface",
+        "action": "store_true",
+        "valid_modes": ["interface", "ntp"]
     }
 }

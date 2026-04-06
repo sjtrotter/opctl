@@ -1,6 +1,6 @@
 import subprocess
 import socket
-from typing import List
+from typing import List, Optional
 from opctl.domain.interfaces import ISystemAdapter, INetworkAdapter, IFirewallAdapter
 
 class WindowsBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter):
@@ -83,7 +83,8 @@ class WindowsBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter):
     def flush_managed_rules(self) -> None:
         self._run_ps('Remove-NetFirewallRule -Group "OpCtl" -ErrorAction SilentlyContinue')
 
-    def _apply_port_rules(self, port_overrides: List[str], action: str, display_prefix: str) -> None:
+    def _apply_port_rules(self, port_overrides: List[str], action: str, display_prefix: str, interface: Optional[str] = None) -> None:
+        iface_str = f' -InterfaceAlias "{interface}"' if interface else ""
         for rule in port_overrides:
             if ":" not in rule: continue
             ip, port = rule.rsplit(":", 1)
@@ -91,28 +92,29 @@ class WindowsBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter):
             for proto in ["TCP", "UDP"]:
                 cmd = (f'New-NetFirewallRule -DisplayName "{display_prefix} {clean_ip}:{port} ({proto})" '
                        f'-Group "OpCtl" -Direction Outbound -Action {action} '
-                       f'-RemoteAddress "{clean_ip}" -Protocol {proto} -RemotePort {port}')
+                       f'-RemoteAddress "{clean_ip}" -Protocol {proto} -RemotePort {port}{iface_str}')
                 self._run_ps(cmd)
 
-    def _apply_cidr_rules(self, cidrs: List[str], action: str, display_prefix: str) -> None:
+    def _apply_cidr_rules(self, cidrs: List[str], action: str, display_prefix: str, interface: Optional[str] = None) -> None:
         if not cidrs: return
         address_array = ",".join([f'"{cidr}"' for cidr in cidrs])
+        iface_str = f' -InterfaceAlias "{interface}"' if interface else ""
         cmd = (f'New-NetFirewallRule -DisplayName "{display_prefix} CIDRs" '
-               f'-Group "OpCtl" -Direction Outbound -Action {action} -RemoteAddress {address_array}')
+               f'-Group "OpCtl" -Direction Outbound -Action {action} -RemoteAddress {address_array}{iface_str}')
         self._run_ps(cmd)
 
-    def apply_ipv4_blocks(self, cidrs: List[str], port_overrides: List[str]) -> None:
-        self._apply_port_rules(port_overrides, "Block", "OpCtl v4 Drop")
-        self._apply_cidr_rules(cidrs, "Block", "OpCtl v4 Drop")
+    def apply_ipv4_blocks(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None:
+        self._apply_port_rules(port_overrides, "Block", "OpCtl v4 Drop", interface)
+        self._apply_cidr_rules(cidrs, "Block", "OpCtl v4 Drop", interface)
 
-    def apply_ipv4_allows(self, cidrs: List[str], port_overrides: List[str]) -> None:
-        self._apply_port_rules(port_overrides, "Allow", "OpCtl v4 Allow")
-        self._apply_cidr_rules(cidrs, "Allow", "OpCtl v4 Allow")
+    def apply_ipv4_allows(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None:
+        self._apply_port_rules(port_overrides, "Allow", "OpCtl v4 Allow", interface)
+        self._apply_cidr_rules(cidrs, "Allow", "OpCtl v4 Allow", interface)
 
-    def apply_ipv6_blocks(self, cidrs: List[str], port_overrides: List[str]) -> None:
-        self._apply_port_rules(port_overrides, "Block", "OpCtl v6 Drop")
-        self._apply_cidr_rules(cidrs, "Block", "OpCtl v6 Drop")
+    def apply_ipv6_blocks(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None:
+        self._apply_port_rules(port_overrides, "Block", "OpCtl v6 Drop", interface)
+        self._apply_cidr_rules(cidrs, "Block", "OpCtl v6 Drop", interface)
 
-    def apply_ipv6_allows(self, cidrs: List[str], port_overrides: List[str]) -> None:
-        self._apply_port_rules(port_overrides, "Allow", "OpCtl v6 Allow")
-        self._apply_cidr_rules(cidrs, "Allow", "OpCtl v6 Allow")
+    def apply_ipv6_allows(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None:
+        self._apply_port_rules(port_overrides, "Allow", "OpCtl v6 Allow", interface)
+        self._apply_cidr_rules(cidrs, "Allow", "OpCtl v6 Allow", interface)

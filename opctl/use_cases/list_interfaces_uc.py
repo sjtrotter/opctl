@@ -12,7 +12,9 @@ class ListInterfacesUseCase:
         # Load the staged state via factory
         staged_dict = self.repo.load_state()
         profile = OpProfile.from_dict(staged_dict)
-        staged_iface = profile.interface.name
+        
+        # Get all interface names currently staged in the dictionary
+        staged_ifaces = list(profile.interfaces.keys())
 
         interfaces = self.net_os.get_available_interfaces()
         
@@ -26,10 +28,11 @@ class ListInterfacesUseCase:
                 "name": iface,
                 "mac": live_mac,
                 "ip": live_ip,
-                "is_staged": (iface == staged_iface)
+                # Mark as staged if the OS interface name is in our staged dictionary
+                "is_staged": (iface in staged_ifaces)
             })
             
         return {
             "interfaces": result, 
-            "staged_target": staged_iface
+            "staged_targets": staged_ifaces
         }

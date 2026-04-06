@@ -1,7 +1,7 @@
 import subprocess
 import os
 import socket
-from typing import List
+from typing import List, Optional
 from opctl.domain.interfaces import ISystemAdapter, INetworkAdapter, IFirewallAdapter
 
 class LinuxBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter):
@@ -102,25 +102,30 @@ class LinuxBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter):
             self._run(["iptables", "-N", "OPCTL_OUT"])
             self._run(["iptables", "-I", "OUTPUT", "1", "-j", "OPCTL_OUT"])
 
-    def _apply_rules(self, cidrs: List[str], ports: List[str], action: str) -> None:
+    def _apply_rules(self, cidrs: List[str], ports: List[str], action: str, interface: Optional[str] = None) -> None:
         target = "REJECT" if action == "Block" else "ACCEPT"
+        
+        # Dynamically bind to the outbound interface if provided
+        iface_flag = ["-o", interface] if interface else []
+        
         for cidr in cidrs:
-            self._run(["iptables", "-A", "OPCTL_OUT", "-d", cidr, "-j", target])
+            self._run(["iptables", "-A", "OPCTL_OUT", *iface_flag, "-d", cidr, "-j", target])
+            
         for entry in ports:
             if ":" not in entry: continue
             ip, port = entry.rsplit(":", 1)
             clean_ip = ip.replace("[", "").replace("]", "")
             for proto in ["tcp", "udp"]:
-                self._run(["iptables", "-A", "OPCTL_OUT", "-p", proto, "-d", clean_ip, "--dport", port, "-j", target])
+                self._run(["iptables", "-A", "OPCTL_OUT", *iface_flag, "-p", proto, "-d", clean_ip, "--dport", port, "-j", target])
 
-    def apply_ipv4_blocks(self, cidrs: List[str], port_overrides: List[str]) -> None:
-        self._apply_rules(cidrs, port_overrides, "Block")
+    def apply_ipv4_blocks(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None:
+        self._apply_rules(cidrs, port_overrides, "Block", interface)
 
-    def apply_ipv4_allows(self, cidrs: List[str], port_overrides: List[str]) -> None:
-        self._apply_rules(cidrs, port_overrides, "Allow")
+    def apply_ipv4_allows(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None:
+        self._apply_rules(cidrs, port_overrides, "Allow", interface)
 
-    def apply_ipv6_blocks(self, cidrs: List[str], port_overrides: List[str]) -> None:
+    def apply_ipv6_blocks(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None:
         pass
 
-    def apply_ipv6_allows(self, cidrs: List[str], port_overrides: List[str]) -> None:
+    def apply_ipv6_allows(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None:
         pass
