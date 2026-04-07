@@ -12,18 +12,59 @@ class ViewStatusUseCase:
         staged_dict = self.repo.load_state()
         profile = OpProfile.from_dict(staged_dict)
         
-        # --- GLOBAL SYSTEM STATUS ---
+        # --- OS QUERIES ---
         live_hostname = self.sys_os.get_hostname()
-        
-        # Aggregate live DNS from all available OS interfaces
         available_ifaces = self.net_os.get_available_interfaces()
+        
         live_dns_set = set()
         for iface in available_ifaces:
             live_dns_set.update(self.net_os.get_dns_servers(iface))
         live_dns = list(live_dns_set)
 
-        # --- INTERFACE LOOP ---
-        interfaces_status = {}
+        # --- BUILD DATA DICTIONARY ---
+        # The keys here are literal display names. The StatusReportUseCase will just blindly print them.
+        report_data = {
+            "System": {
+                "Hostname": {
+                    "staged": profile.system.hostname or "N/A",
+                    "live": live_hostname,
+                    "match": profile.system.hostname == live_hostname if profile.system.hostname else False
+                },
+                "Unmanaged Policy": {
+                    "staged": profile.system.unmanaged_policy.title(),
+                    "live": "N/A",
+                    "match": True # No live OS equivalent to verify against generically yet
+                },
+                "Global DNS": {
+                    "staged": ",".join(profile.network.global_dns) if profile.network.global_dns else "OS Default",
+                    "live": ",".join(live_dns) if live_dns else "None",
+                    "match": set(profile.network.global_dns) == set(live_dns) if profile.network.global_dns else False
+                }
+            },
+            "NTP": {
+                "Enabled": {
+                    "staged": str(profile.ntp.enabled),
+                    "live": "N/A", 
+                    "match": True
+                },
+                "Servers": {
+                    "staged": ",".join(profile.ntp.servers) if profile.ntp.servers else "None",
+                    "live": "N/A",
+                    "match": True
+                }
+            },
+            "Global Policy": {},
+            "Interfaces": {}
+        }
+
+        # --- GLOBAL FIREWALL ---
+        gp = profile.global_policy.compile(IPParser.parse)
+        for v in ["v4", "v6"]:
+            report_data["Global Policy"][f"{v.upper()} Targets"] = {"staged": ",".join(gp[v]["targets"]) or "None", "live": "N/A", "match": True}
+            report_data["Global Policy"][f"{v.upper()} Trusted"] = {"staged": ",".join(gp[v]["trusted"]) or "None", "live": "N/A", "match": True}
+            report_data["Global Policy"][f"{v.upper()} Blocked"] = {"staged": ",".join(gp[v]["blocked"]) or "None", "live": "N/A", "match": True}
+
+        # --- INTERFACES ---
         for iname, iface_profile in profile.interfaces.items():
             live_mac, live_ip, live_gw = "N/A", "Unassigned", "None"
             os_is_dhcp = False
@@ -36,58 +77,39 @@ class ViewStatusUseCase:
 
             intent_is_dhcp = iface_profile.mode.lower() == "dhcp"
             mode_match = (intent_is_dhcp == os_is_dhcp)
-
-            def format_live(val: str, is_dhcp_context: bool) -> str:
-                if intent_is_dhcp and is_dhcp_context and os_is_dhcp:
-                    return f"DHCP (# {val})"
-                return val
-
             staged_ips = iface_profile.ip_addresses
-            ip_match = mode_match if intent_is_dhcp else (live_ip in staged_ips if staged_ips else False)
 
-            interfaces_status[iname] = {
-                "name": iname,
-                "admin_state": {
+            lp = iface_profile.policy.compile(IPParser.parse)
+
+            report_data["Interfaces"][iname] = {
+                "Admin State": {
                     "staged": "Up" if iface_profile.enabled else "Down",
-                    "live": "Up", # Assumes Up unless link state queried directly
+                    "live": "Up", 
                     "match": True
                 },
-                "mode": {
-                    "staged": iface_profile.mode, 
-                    "live": "dhcp" if os_is_dhcp else "static", 
+                "Mode": {
+                    "staged": iface_profile.mode.upper(), 
+                    "live": "DHCP" if os_is_dhcp else "STATIC", 
                     "match": mode_match
                 },
-                "mac_address": {
+                "MAC Address": {
                     "staged": "Random" if iface_profile.randomize_mac else (iface_profile.mac_address or "Auto"), 
                     "live": live_mac, 
                     "match": iface_profile.mac_address.lower() == live_mac.lower() if iface_profile.mac_address else False
                 },
-                "ip_address": {
+                "IP Address": {
                     "staged": ",".join(staged_ips) if staged_ips else "DHCP", 
-                    "live": format_live(live_ip, True), 
-                    "match": ip_match
+                    "live": f"DHCP ({live_ip})" if (intent_is_dhcp and os_is_dhcp) else live_ip, 
+                    "match": mode_match if intent_is_dhcp else (live_ip in staged_ips if staged_ips else False)
                 },
-                "gateway": {
+                "Gateway": {
                     "staged": iface_profile.gateway or "DHCP", 
-                    "live": format_live(live_gw, True), 
+                    "live": f"DHCP ({live_gw})" if (intent_is_dhcp and os_is_dhcp) else live_gw, 
                     "match": mode_match if intent_is_dhcp else (iface_profile.gateway == live_gw)
                 },
-                "local_policy_preview": iface_profile.policy.compile(IPParser.parse)
+                "Local V4 Targets": {"staged": ",".join(lp["v4"]["targets"]) or "None", "live": "N/A", "match": True},
+                "Local V4 Trusted": {"staged": ",".join(lp["v4"]["trusted"]) or "None", "live": "N/A", "match": True},
+                "Local V4 Blocked": {"staged": ",".join(lp["v4"]["blocked"]) or "None", "live": "N/A", "match": True}
             }
 
-        return {
-            "identity": {
-                "hostname": {
-                    "staged": profile.system.hostname,
-                    "live": live_hostname,
-                    "match": profile.system.hostname == live_hostname if profile.system.hostname else False
-                },
-                "dns_servers": {
-                    "staged": profile.network.global_dns,
-                    "live": live_dns,
-                    "match": set(profile.network.global_dns) == set(live_dns) if profile.network.global_dns else False
-                }
-            },
-            "interfaces": interfaces_status,
-            "global_policy_preview": profile.global_policy.compile(IPParser.parse)
-        }
+        return report_data

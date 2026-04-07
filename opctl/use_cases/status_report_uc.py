@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from .view_status_uc import ViewStatusUseCase
 from ..domain.interfaces import IPolicyRepository, ISystemAdapter, INetworkAdapter
 
@@ -17,48 +17,38 @@ class StatusReportUseCase:
         staged_str = str(staged)[:25]
         live_str = str(live)[:25]
         status_text = f"{Colors.GREEN}[ SYNC ]{Colors.RESET}" if match else f"{Colors.RED}[ DIFF ]{Colors.RESET}"
-        return f"{prop:<18} {staged_str:<25} {live_str:<25} {status_text}"
+        return f"{prop:<20} {staged_str:<25} {live_str:<25} {status_text}"
 
-    def execute(self) -> List[str]:
+    def execute(self, mode: str = "root", target_interface: Optional[str] = None) -> List[str]:
         data = self.view_status.execute()
-        header = f"{'PROPERTY':<18} {'STAGED':<25} {'LIVE':<25} STATUS"
+        header = f"{'PROPERTY':<20} {'STAGED':<25} {'LIVE':<25} STATUS"
         lines: List[str] = []
 
-        # --- GLOBAL SYSTEM SECTION ---
-        lines.append(f"\n{Colors.BOLD}{Colors.CYAN}=== [ GLOBAL SYSTEM ] ==={Colors.RESET}")
-        lines.append(header); lines.append("-" * 80)
-        
-        sys = data["identity"]
-        lines.append(self._format_row("Hostname", sys['hostname']['staged'] or "N/A", sys['hostname']['live'], sys['hostname']['match']))
-        
-        staged_dns = ",".join(sys['dns_servers']['staged']) if sys['dns_servers']['staged'] else "OS Default"
-        live_dns = ",".join(sys['dns_servers']['live']) if sys['dns_servers']['live'] else "None"
-        lines.append(self._format_row("DNS Servers", staged_dns, live_dns, sys['dns_servers']['match']))
+        def print_section(title, section_data):
+            lines.append(f"\n{Colors.BOLD}{Colors.CYAN}=== [ {title.upper()} ] ==={Colors.RESET}")
+            lines.append(header); lines.append("-" * 82)
+            for key, val in section_data.items():
+                lines.append(self._format_row(key, val["staged"], val["live"], val["match"]))
 
-        # --- INTERFACE LOOP ---
-        for iface_name, iface in data["interfaces"].items():
-            lines.append(f"\n{Colors.BOLD}{Colors.CYAN}=== [ INTERFACE: {iface_name} ] ==={Colors.RESET}")
-            lines.append(header); lines.append("-" * 80)
+        # Context-Aware Rendering
+        if mode in ["root", "system", "configure"]:
+            print_section("Global System", data["System"])
             
-            lines.append(self._format_row("Config Mode", iface['mode']['staged'], iface['mode']['live'], iface['mode']['match']))
-            lines.append(self._format_row("MAC Address", iface['mac_address']['staged'], iface['mac_address']['live'], iface['mac_address']['match']))
-            
-            # Print Local Policy if it exists
-            local_pol = iface["local_policy_preview"]["v4"]
-            if local_pol["targets"] or local_pol["trusted"] or local_pol["blocked"]:
-                lines.append("-" * 80)
-                lines.append(f"{Colors.BOLD}LOCAL FIREWALL (v4){Colors.RESET}")
-                lines.append(f"  Targets : {','.join(local_pol['targets']) or 'None'}")
-                lines.append(f"  Trusted : {','.join(local_pol['trusted']) or 'None'}")
-                lines.append(f"  Blocked : {','.join(local_pol['blocked']) or 'None'}")
+        if mode in ["root", "ntp", "configure"]:
+            print_section("NTP Services", data["NTP"])
 
-        # --- GLOBAL FIREWALL SECTION ---
-        lines.append(f"\n{Colors.BOLD}{Colors.CYAN}=== [ GLOBAL FIREWALL PREVIEW ] ==={Colors.RESET}")
-        p = data["global_policy_preview"]
-        for v in ["v4", "v6"]:
-            lines.append(f"{Colors.BOLD}{v.upper()}{Colors.RESET} Targets : {','.join(p[v]['targets']) or 'None'}")
-            lines.append(f"{Colors.BOLD}{v.upper()}{Colors.RESET} Trusted : {','.join(p[v]['trusted']) or 'None'}")
-            lines.append(f"{Colors.BOLD}{v.upper()}{Colors.RESET} Blocked : {','.join(p[v]['blocked']) or 'None'}")
-        
+        if mode in ["root", "policy", "configure"]:
+            print_section("Global Firewall", data["Global Policy"])
+
+        if mode in ["root", "interface", "configure"]:
+            for iface_name, iface_data in data["Interfaces"].items():
+                # Filter specific interface if requested
+                if target_interface and iface_name != target_interface:
+                    continue
+                print_section(f"Interface: {iface_name}", iface_data)
+
+        if not lines:
+            lines.append("[*] No staged configurations found for this context.")
+            
         lines.append("") 
         return lines

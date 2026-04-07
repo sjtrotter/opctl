@@ -1,10 +1,6 @@
 import cmd
 import shlex
-from .use_cases.bulk_configure_uc import BulkConfigureUseCase
-from .use_cases.status_report_uc import StatusReportUseCase
-from .use_cases.commit_policy_uc import CommitPolicyUseCase
-from .use_cases.list_interfaces_uc import ListInterfacesUseCase
-from .use_cases.transfer_config_uc import ExportConfigUseCase
+import sys
 from .command_schema import COMMAND_SCHEMA
 
 class OpctlShell(cmd.Cmd):
@@ -18,149 +14,145 @@ class OpctlShell(cmd.Cmd):
         self.current_mode = 'root'
         self.current_interface = None
 
+        self.alias_map = {}
+        for canonical, cfg in COMMAND_SCHEMA.items():
+            self.alias_map[canonical] = canonical
+            for alias in cfg.get("aliases", []):
+                self.alias_map[alias] = canonical
+
     def precmd(self, line: str) -> str:
         line = line.strip()
-        if not line or line == "help": return line
+        if not line: return line
             
-        cmd_word = line.split()[0]
+        parts = line.split()
+        cmd_word = parts[0]
         
-        # Filter commands valid for current mode
-        valid_cmds = []
-        for name in [m[3:] for m in dir(self) if m.startswith('do_')]:
-            func = getattr(self, f"do_{name}")
-            vm = getattr(func, '_valid_modes', ['root'])
-            if self.current_mode in vm:
-                valid_cmds.append(name)
-                
+        if cmd_word in self.alias_map:
+            parts[0] = self.alias_map[cmd_word]
+            cmd_word = parts[0]
+
+        valid_cmds = [name for name, cfg in COMMAND_SCHEMA.items() if self.current_mode in cfg.get("valid_modes", [])]
         matches = [c for c in valid_cmds if c.startswith(cmd_word)]
+        
         if len(matches) == 1:
-            return line.replace(cmd_word, matches[0], 1)
-        return line
+            parts[0] = matches[0]
+            return " ".join(parts)
+            
+        return " ".join(parts)
 
-    # === NAVIGATION COMMANDS ===
-    def do_configure(self, arg):
-        """Enter configuration mode to modify settings."""
-        self.current_mode = 'configure'
-        self.prompt = 'opctl(config)# '
+    def default(self, line: str):
+        cmd_word = line.split()[0]
+        print(f"[!] Unknown or ambiguous command: {cmd_word}")
 
-    def do_system(self, arg):
-        """Access global system settings."""
-        self.current_mode = 'system'
-        self.prompt = 'opctl(config-sys)# '
+    def _dispatch_builtin(self, cmd_name, arg):
+        if cmd_name == "help":
+            self._print_help()
+        elif cmd_name == "exit":
+            if self.current_mode in ['system', 'ntp', 'policy', 'interface']:
+                self.current_mode = 'configure'
+                self.current_interface = None
+                self.prompt = 'opctl(config)# '
+            elif self.current_mode == 'configure':
+                self.current_mode = 'root'
+                self.prompt = 'opctl# '
+            else:
+                sys.exit(0)
+        elif cmd_name == "EOF":
+            print()
+            sys.exit(0)
 
-    def do_ntp(self, arg):
-        """Access NTP service settings."""
-        self.current_mode = 'ntp'
-        self.prompt = 'opctl(config-ntp)# '
-
-    def do_policy(self, arg):
-        """Access global firewall policy settings."""
-        self.current_mode = 'policy'
-        self.prompt = 'opctl(config-policy)# '
-
-    def do_interface(self, arg):
-        """Access settings for a specific interface."""
-        args = shlex.split(arg)
-        if not args:
-            print("Usage: interface <name>"); return
-        self.current_interface = args[0]
-        self.current_mode = 'interface'
-        self.prompt = f'opctl(config-if:{self.current_interface})# '
-
-    def do_exit(self, arg):
-        """Move back one level or exit the shell."""
-        if self.current_mode in ['system', 'ntp', 'policy', 'interface']:
-            self.current_mode = 'configure'
-            self.current_interface = None
+    def _dispatch_nav(self, cmd_name, arg):
+        self.current_mode = cmd_name
+        if cmd_name == "configure":
             self.prompt = 'opctl(config)# '
-        elif self.current_mode == 'configure':
-            self.current_mode = 'root'
-            self.prompt = 'opctl# '
+        elif cmd_name == "interface":
+            args = shlex.split(arg)
+            if not args:
+                print("Usage error: 'interface' requires a target name (e.g. eth0).")
+                self.current_mode = 'configure'
+                return
+            self.current_interface = args[0]
+            self.prompt = f'opctl(config-if:{self.current_interface})# '
         else:
-            return True # Terminate
-        return False
+            self.prompt = f'opctl(config-{cmd_name})# '
 
-    # === ACTION COMMANDS ===
-    def do_execute(self, arg):
-        """Commit staged changes to the OS."""
-        print("[*] Executing config on hardware...")
-        CommitPolicyUseCase(self.repo, self.os_adapter, self.os_adapter, self.os_adapter).execute()
-        print("[+] Done.")
-
-    def do_show(self, arg):
-        """Show system info or staged changes."""
-        args = shlex.split(arg)
-        sub = args[0].lower() if args else ""
-        if sub.startswith("int"):
-            res = ListInterfacesUseCase(self.repo, self.os_adapter).execute()
-            print("\n--- Interfaces ---")
-            for iface in res["interfaces"]:
-                m = "[*]" if iface["is_staged"] else "   "
-                print(f"{m} {iface['name']:<15} IP: {iface['ip']}")
-        else:
-            for line in StatusReportUseCase(self.repo, self.os_adapter, self.os_adapter).execute():
-                print(line)
-
-    def do_write(self, arg):
-        """Save configuration."""
-        print("[*] Configuration saved.")
-
-    # === GROUPED HELP SYSTEM ===
-    def do_help(self, arg):
-        """Display context-aware help grouped by category."""
+    def _print_help(self):
         print(f"\n--- [ {self.prompt.strip()} Commands ] ---")
+        groups = {"Actions": [], "Navigation": [], "Settings": [], "Built-in": []}
         
-        groups = {"Actions": [], "Navigation": [], "Settings": []}
-        
-        for name in [m[3:] for m in dir(self) if m.startswith('do_')]:
-            if name in ['EOF', 'help', 'exit']: continue
-            func = getattr(self, f"do_{name}")
+        for name, cfg in COMMAND_SCHEMA.items():
+            if self.current_mode not in cfg.get("valid_modes", []):
+                continue
+                
+            cat = cfg.get("category", "Settings")
+            aliases = f" ({','.join(cfg['aliases'])})" if "aliases" in cfg else ""
+            usage = f"{name}{aliases}"
             
-            # Check mode validity
-            vm = getattr(func, '_valid_modes', ['root'])
-            if self.current_mode not in vm: continue
+            if name == "interface": usage += " <name>"
+            elif cfg.get("nargs") == "+": usage += " <val1> [val2...]"
+            elif cfg.get("nargs") == 1: usage += " <value>"
             
-            # Get metadata
-            cat = getattr(func, '_category', 'Actions')
-            usage = getattr(func, '_cmd_usage', name)
-            help_text = func.__doc__ or "No description."
-            
-            if cat in groups:
-                groups[cat].append(f"  {usage:<25} {help_text}")
+            help_text = cfg.get("help", "")
+            groups[cat].append(f"  {usage:<30} {help_text}")
 
         for cat, lines in groups.items():
             if lines:
                 print(f"\n[{cat}]")
-                for line in sorted(lines):
-                    print(line)
+                for line in sorted(lines): print(line)
         print()
 
-    def do_EOF(self, arg): return True
-
-# --- METAPROGRAMMING BINDER ---
-def _make_param(name, cfg):
+def _create_method(cmd_name, cfg):
+    """Creates a do_<cmd> method that routes to the schema handler."""
     def method(self, arg):
-        is_flag = cfg.get("action") == "store_true"
-        val = True if is_flag else (shlex.split(arg) if cfg.get("nargs") == "+" else shlex.split(arg)[0])
-        
-        payload = {}
-        if self.current_mode == "interface":
-            payload = {"interface_name": self.current_interface, "interface_config": {name: val}}
-        elif self.current_mode in ["system", "ntp"]:
-            payload = {self.current_mode: {name: val}}
-        
-        BulkConfigureUseCase(self.repo).execute(payload)
-        print(f"[*] Staged {name}.")
+        if self.current_mode not in cfg.get("valid_modes", []):
+            print(f"[!] Command '{cmd_name}' is not valid in [{self.current_mode}] mode.")
+            return
+
+        cmd_type = cfg.get("type")
+        if cmd_type == "builtin": 
+            self._dispatch_builtin(cmd_name, arg)
+            return
+        elif cmd_type == "nav": 
+            self._dispatch_nav(cmd_name, arg)
+            return
+
+        handler = cfg.get("handler")
+        if not handler:
+            print(f"[!] Error: No handler defined for {cmd_name}")
+            return
+
+        args = shlex.split(arg)
+        # Inject Context so the handler knows where we are!
+        payload = {"_mode": self.current_mode, "_interface": self.current_interface}
+
+        if cmd_type == "action":
+            payload["value"] = args[0] if args else cfg.get("default")
+            handler(self.repo, self.os_adapter, payload)
+            
+        elif cmd_type == "setting":
+            is_flag = cfg.get("action") == "store_true"
+            if is_flag: val = True
+            else:
+                if not args:
+                    print(f"Usage error: '{cmd_name}' requires a value.")
+                    return
+                val = args if cfg.get("nargs") == "+" else args[0]
+                choices = cfg.get("choices")
+                if choices and (val not in choices and (isinstance(val, list) and not all(v in choices for v in val))):
+                    print(f"Invalid choice. Valid options: {choices}")
+                    return
+            
+            if self.current_mode == "interface":
+                payload["interface_name"] = self.current_interface
+                payload["interface_config"] = {cmd_name: val}
+            elif self.current_mode in ["system", "ntp", "policy"]:
+                payload[self.current_mode] = {cmd_name: val}
+                
+            handler(self.repo, self.os_adapter, payload)
+            print(f"[*] Staged {cmd_name}.")
+            
+    method.__doc__ = cfg.get("help", "")
     return method
 
-for p, cfg in COMMAND_SCHEMA.items():
-    m_name = f"do_{p}"
-    if not hasattr(OpctlShell, m_name):
-        setattr(OpctlShell, m_name, _make_param(p, cfg))
-    
-    # Bind metadata
-    method = getattr(OpctlShell, m_name)
-    method._valid_modes = cfg.get("valid_modes", ["root"])
-    method._category = cfg.get("category", "Actions")
-    method._cmd_usage = cfg.get("usage", p)
-    if "help" in cfg: method.__doc__ = cfg["help"]
+for name, config in COMMAND_SCHEMA.items():
+    setattr(OpctlShell, f"do_{name}", _create_method(name, config))

@@ -1,56 +1,48 @@
 import argparse
-import sys
 from .command_schema import COMMAND_SCHEMA
 
 def build_parser():
-    # allow_abbrev=True only works for --flags. For positional subparsers,
-    # we'll handle abbreviations in the main execution loop.
     parser = argparse.ArgumentParser(
-        description="opctl: Tactical Network Configuration Utility",
+        description="opctl: Tactical Network Configuration Utility (POSIX Mode)",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
-    subparser_registry = {
-        "root": parser.add_subparsers(dest="root_cmd", metavar="{command}", help="Root Commands")
-    }
+    subparsers = parser.add_subparsers(dest="command", help="Operational mode or action")
 
-    # Pass 1: Create all Navigation "Nodes"
-    nav_cmds = [k for k, v in COMMAND_SCHEMA.items() if v.get("type") == "nav"]
-    for cmd in nav_cmds:
-        cfg = COMMAND_SCHEMA[cmd]
-        parent_mode = cfg["valid_modes"][0]
-        
-        if parent_mode in subparser_registry:
-            node_parser = subparser_registry[parent_mode].add_parser(cmd, help=cfg.get("help"))
-            
-            if cmd == "interface":
-                node_parser.add_argument("iface_target", help="Target interface name (e.g. eth0)")
-            
-            # Use 'metavar' so sub-commands show up in -h output
-            subparser_registry[cmd] = node_parser.add_subparsers(
-                dest=f"{cmd}_cmd", 
-                metavar="{setting}", 
-                help=f"{cmd} sub-commands"
+    # 1. Build Action Parsers (e.g. 'show', 'write', 'execute')
+    actions = {k: v for k, v in COMMAND_SCHEMA.items() if v.get("type") == "action"}
+    for cmd, cfg in actions.items():
+        act_parser = subparsers.add_parser(cmd, help=cfg.get("help"))
+        if "choices" in cfg or "nargs" in cfg:
+            act_parser.add_argument(
+                "target", 
+                nargs=cfg.get("nargs", "?"), 
+                choices=cfg.get("choices"), 
+                default=cfg.get("default"),
+                help=f"Target for {cmd}"
             )
 
-    # Pass 2: Add Leaf Settings and Actions
-    for cmd, cfg in COMMAND_SCHEMA.items():
-        if cfg.get("type") == "nav":
-            continue
+    # 2. Build Configuration Sub-Modes (e.g. 'system', 'interface')
+    navs = {k: v for k, v in COMMAND_SCHEMA.items() if v.get("type") == "nav" and k != "configure"}
+    for cmd, cfg in navs.items():
+        # E.g., opctl interface <name> --ip 1.1.1.1
+        nav_parser = subparsers.add_parser(cmd, help=cfg.get("help"), aliases=cfg.get("aliases", []))
+        
+        # Interfaces require a target positional
+        if cmd == "interface":
+            nav_parser.add_argument("iface_target", help="Target interface (e.g. eth0)")
+
+        # Attach valid settings as POSIX flags for this specific mode
+        valid_settings = {k: v for k, v in COMMAND_SCHEMA.items() if v.get("type") == "setting" and cmd in v.get("valid_modes", [])}
+        
+        for setting_name, setting_cfg in valid_settings.items():
+            flags = setting_cfg.get("flags", [f"--{setting_name}"])
             
-        for mode in cfg.get("valid_modes", ["root"]):
-            if mode in subparser_registry:
-                leaf_parser = subparser_registry[mode].add_parser(cmd, help=cfg.get("help"))
-                
-                arg_keys = ["nargs", "action", "choices", "default", "type", "metavar"]
-                clean_cfg = {k: v for k, v in cfg.items() if k in arg_keys}
-                
-                # IMPORTANT: If the command is 'show', we need its arguments
-                if cmd == "show":
-                    leaf_parser.add_argument("value", nargs="?", default="edits", choices=["interfaces", "edits"])
-                elif cfg.get("type") == "setting" and "action" not in clean_cfg:
-                    leaf_parser.add_argument("value", **clean_cfg)
-                elif clean_cfg:
-                    leaf_parser.add_argument("value", **clean_cfg)
+            # Filter argparse-compatible kwargs
+            arg_keys = ["nargs", "action", "choices", "help"]
+            kwargs = {k: v for k, v in setting_cfg.items() if k in arg_keys}
+            
+            # Use dest so it maps perfectly back to the schema's setting name
+            nav_parser.add_argument(*flags, dest=setting_name, **kwargs)
 
     return parser
