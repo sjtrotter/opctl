@@ -15,6 +15,7 @@ class HostnamectlProvider(LinuxProvider, ISystemAdapter, IProvider):
         return shutil.which("hostnamectl") is not None
 
     def set_hostname(self, hostname: str) -> None:
+        self.validate_hostname(hostname)
         self._run(["hostnamectl", "set-hostname", hostname])
 
     def get_hostname(self) -> str:

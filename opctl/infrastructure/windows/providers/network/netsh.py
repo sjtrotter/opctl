@@ -25,6 +25,7 @@ class NetshNetworkProvider(WindowsProvider, INetworkAdapter, IProvider):
         return interfaces
 
     def set_link_state(self, interface: str, state: str) -> None:
+        self.validate_interface(interface)
         action = "enable" if state.lower() == "up" else "disable"
         self._run_cmd(f'netsh interface set interface "{interface}" admin={action}')
 
@@ -35,6 +36,7 @@ class NetshNetworkProvider(WindowsProvider, INetworkAdapter, IProvider):
         )
 
     def get_mac_address(self, interface: str) -> str:
+        self.validate_interface(interface)
         output = self._run_cmd(f'getmac /fo csv /nh /v')
         for line in output.splitlines():
             parts = [p.strip('"') for p in line.split('","')]
@@ -45,6 +47,12 @@ class NetshNetworkProvider(WindowsProvider, INetworkAdapter, IProvider):
 
     def configure_static(self, interface: str, ip: str, gateway: str,
                          dns_servers: List[str]) -> None:
+        self.validate_interface(interface)
+        self.validate_ip(ip)
+        if gateway:
+            self.validate_ip(gateway)
+        for dns in dns_servers:
+            self.validate_dns(dns)
         addr, prefix = (ip.split("/") + ["24"])[:2]
         bits = int(prefix)
         mask = ".".join(str((0xFFFFFFFF << (32 - bits) >> i) & 0xFF) for i in [24, 16, 8, 0])
@@ -58,6 +66,7 @@ class NetshNetworkProvider(WindowsProvider, INetworkAdapter, IProvider):
             self._run_cmd(f'netsh interface ip {src} dns name="{interface}" {dns}')
 
     def configure_dhcp(self, interface: str) -> None:
+        self.validate_interface(interface)
         self._run_cmd(f'netsh interface ip set address name="{interface}" dhcp')
         self._run_cmd(f'netsh interface ip set dns name="{interface}" dhcp')
 

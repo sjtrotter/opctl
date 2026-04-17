@@ -16,6 +16,7 @@ class HostnameProvider(LinuxProvider, ISystemAdapter, IProvider):
         return shutil.which("hostname") is not None
 
     def set_hostname(self, hostname: str) -> None:
+        self.validate_hostname(hostname)
         self._run(["hostname", hostname])
         try:
             with open("/etc/hostname", "w") as f:
