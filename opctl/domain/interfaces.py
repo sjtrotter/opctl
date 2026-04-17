@@ -1,6 +1,18 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
+
+class IProvider(ABC):
+    """Mixin for all provider implementations. Enables auto-detection and named selection."""
+
+    @classmethod
+    @abstractmethod
+    def provider_name(cls) -> str: pass
+
+    @classmethod
+    @abstractmethod
+    def is_available(cls) -> bool: pass
+
 class ISystemAdapter(ABC):
     """Controls OS-level identity."""
     @abstractmethod

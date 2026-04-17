@@ -3,6 +3,7 @@ from typing import Dict, Any
 from . import get_os_interface
 from .adapters.json_repository import JsonPolicyRepository
 from .cli_parser import build_parser
+from .domain.models.backend import BackendConfig
 from .shell import OpctlShell
 from .command_schema import COMMAND_SCHEMA
 
@@ -49,9 +50,16 @@ def resolve_posix_payload(args) -> Dict[str, Any]:
     return payload
 
 def main():
-    repo = JsonPolicyRepository("session.json") 
+    repo = JsonPolicyRepository("session.json")
+    state = repo.load_state() or {}
+    be_data = state.get("backend", {})
+    backend_config = BackendConfig(
+        firewall_provider=be_data.get("firewall_provider", "auto"),
+        network_provider=be_data.get("network_provider", "auto"),
+        system_provider=be_data.get("system_provider", "auto"),
+    )
     try:
-        os_adapter = get_os_interface()
+        os_adapter = get_os_interface(backend_config)
     except NotImplementedError as e:
         print(f"[!] OS Error: {e}")
         sys.exit(1)
