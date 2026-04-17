@@ -1,13 +1,15 @@
 import platform
-from .infrastructure.linux import LinuxBackend
-from .infrastructure.windows import WindowsBackend
+from opctl.domain.models.backend import BackendConfig
 
-def get_os_interface():
-    """Factory method to return the correct OS backend."""
+
+def get_os_interface(config: BackendConfig = None):
+    """Factory: return the OS backend coordinator with detected or configured providers."""
     current_os = platform.system()
     if current_os == "Linux":
-        return LinuxBackend()
+        from .infrastructure.linux.backend import LinuxBackend
+        return LinuxBackend(config)
     elif current_os == "Windows":
-        return WindowsBackend()
+        from .infrastructure.windows.backend import WindowsBackend
+        return WindowsBackend(config)
     else:
-        raise NotImplementedError(f"OS {current_os} is not supported.")
+        raise NotImplementedError(f"OS '{current_os}' is not supported.")
