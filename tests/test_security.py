@@ -293,6 +293,49 @@ class TestWindowsProviderValidation:
         p.configure_static("Local Area Connection", "192.168.1.10/24", "192.168.1.1", ["8.8.8.8"])
         assert p._run_cmd.called
 
+    # Read-only methods also pass interface name to _run_ps/_run_cmd
+    def test_ps_get_ip_address_rejects_malicious_interface(self):
+        p = _win_ps(PowerShellNetworkProvider)
+        result = p.get_ip_address('Ethernet"; Start-Process calc; echo "')
+        assert result == "Unassigned"
+        p._run_ps.assert_not_called()
+
+    def test_ps_is_dhcp_enabled_rejects_malicious_interface(self):
+        p = _win_ps(PowerShellNetworkProvider)
+        result = p.is_dhcp_enabled('Ethernet$(whoami)')
+        assert result is False
+        p._run_ps.assert_not_called()
+
+    def test_ps_get_gateway_rejects_malicious_interface(self):
+        p = _win_ps(PowerShellNetworkProvider)
+        result = p.get_gateway('eth0 | ipconfig')
+        assert result == "None"
+        p._run_ps.assert_not_called()
+
+    def test_ps_get_dns_servers_rejects_malicious_interface(self):
+        p = _win_ps(PowerShellNetworkProvider)
+        result = p.get_dns_servers('eth0; calc')
+        assert result == []
+        p._run_ps.assert_not_called()
+
+    def test_netsh_get_ip_address_rejects_malicious_interface(self):
+        p = _win_cmd(NetshNetworkProvider)
+        result = p.get_ip_address('LAN" & ipconfig > C:\\out.txt & echo "')
+        assert result == "Unassigned"
+        p._run_cmd.assert_not_called()
+
+    def test_netsh_get_gateway_rejects_malicious_interface(self):
+        p = _win_cmd(NetshNetworkProvider)
+        result = p.get_gateway('LAN & net user attacker /add')
+        assert result == "None"
+        p._run_cmd.assert_not_called()
+
+    def test_netsh_get_dns_servers_rejects_malicious_interface(self):
+        p = _win_cmd(NetshNetworkProvider)
+        result = p.get_dns_servers('LAN | whoami')
+        assert result == []
+        p._run_cmd.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Linux provider — validation fires before _run and file writes

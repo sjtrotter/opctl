@@ -72,34 +72,38 @@ class NetshNetworkProvider(WindowsProvider, INetworkAdapter, IProvider):
 
     def get_ip_address(self, interface: str) -> str:
         try:
+            self.validate_interface(interface)
             output = self._run_cmd(f'netsh interface ip show address "{interface}"')
             for line in output.splitlines():
                 if "IP Address" in line:
                     return line.split(":")[-1].strip()
             return "Unassigned"
-        except RuntimeError:
+        except (RuntimeError, ValueError):
             return "Unassigned"
 
     def is_dhcp_enabled(self, interface: str) -> bool:
         try:
+            self.validate_interface(interface)
             output = self._run_cmd(f'netsh interface ip show address "{interface}"')
             return "DHCP" in output
-        except RuntimeError:
+        except (RuntimeError, ValueError):
             return False
 
     def get_gateway(self, interface: str) -> str:
         try:
+            self.validate_interface(interface)
             output = self._run_cmd(f'netsh interface ip show address "{interface}"')
             for line in output.splitlines():
                 if "Default Gateway" in line:
                     gw = line.split(":")[-1].strip()
                     return gw if gw else "None"
             return "None"
-        except RuntimeError:
+        except (RuntimeError, ValueError):
             return "None"
 
     def get_dns_servers(self, interface: str) -> List[str]:
         try:
+            self.validate_interface(interface)
             output = self._run_cmd(f'netsh interface ip show dns "{interface}"')
             servers = []
             for line in output.splitlines():
@@ -107,5 +111,5 @@ class NetshNetworkProvider(WindowsProvider, INetworkAdapter, IProvider):
                 if m:
                     servers.append(m.group(1))
             return servers
-        except RuntimeError:
+        except (RuntimeError, ValueError):
             return []
