@@ -15,6 +15,7 @@ class PowerShellSystemProvider(WindowsProvider, ISystemAdapter, IProvider):
         return shutil.which("powershell") is not None
 
     def set_hostname(self, hostname: str) -> None:
+        self.validate_hostname(hostname)
         self._run_ps(f'Rename-Computer -NewName "{hostname}" -Force')
 
     def get_hostname(self) -> str:

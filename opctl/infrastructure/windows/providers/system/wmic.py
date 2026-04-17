@@ -16,6 +16,7 @@ class WmicSystemProvider(WindowsProvider, ISystemAdapter, IProvider):
         return shutil.which("wmic") is not None
 
     def set_hostname(self, hostname: str) -> None:
+        self.validate_hostname(hostname)
         current = socket.gethostname()
         self._run_cmd(
             f'wmic computersystem where name="{current}" call rename name="{hostname}"'

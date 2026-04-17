@@ -22,10 +22,13 @@ class NmcliProvider(LinuxProvider, INetworkAdapter, IProvider):
             return []
 
     def set_link_state(self, interface: str, state: str) -> None:
+        self.validate_interface(interface)
         action = "connect" if state.lower() == "up" else "disconnect"
         self._run(["nmcli", "device", action, interface])
 
     def set_mac_address(self, interface: str, mac: str) -> None:
+        self.validate_interface(interface)
+        self.validate_mac(mac)
         self._run(["nmcli", "connection", "modify", interface,
                    "802-3-ethernet.cloned-mac-address", mac])
         self._run(["nmcli", "device", "reapply", interface])
@@ -38,6 +41,12 @@ class NmcliProvider(LinuxProvider, INetworkAdapter, IProvider):
             return "Unknown"
 
     def configure_static(self, interface: str, ip: str, gateway: str, dns_servers: List[str]) -> None:
+        self.validate_interface(interface)
+        self.validate_ip(ip)
+        if gateway:
+            self.validate_ip(gateway)
+        for dns in dns_servers:
+            self.validate_dns(dns)
         self._run(["nmcli", "connection", "modify", interface,
                    "ipv4.method", "manual",
                    "ipv4.addresses", ip,
@@ -46,6 +55,7 @@ class NmcliProvider(LinuxProvider, INetworkAdapter, IProvider):
         self._run(["nmcli", "connection", "up", interface])
 
     def configure_dhcp(self, interface: str) -> None:
+        self.validate_interface(interface)
         self._run(["nmcli", "connection", "modify", interface, "ipv4.method", "auto"])
         self._run(["nmcli", "connection", "up", interface])
 

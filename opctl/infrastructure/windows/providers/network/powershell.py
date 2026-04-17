@@ -19,19 +19,29 @@ class PowerShellNetworkProvider(WindowsProvider, INetworkAdapter, IProvider):
         return [l.strip() for l in output.split("\n") if l.strip()] if output else []
 
     def set_link_state(self, interface: str, state: str) -> None:
+        self.validate_interface(interface)
         action = "Enable-NetAdapter" if state.lower() == "up" else "Disable-NetAdapter"
         self._run_ps(f'{action} -Name "{interface}" -Confirm:$false')
 
     def set_mac_address(self, interface: str, mac: str) -> None:
+        self.validate_interface(interface)
+        self.validate_mac(mac)
         clean = mac.replace(":", "").replace("-", "")
         self._run_ps(f'Set-NetAdapter -Name "{interface}" -MacAddress "{clean}" -Confirm:$false')
 
     def get_mac_address(self, interface: str) -> str:
+        self.validate_interface(interface)
         mac = self._run_ps(f'(Get-NetAdapter -Name "{interface}").MacAddress')
         return mac.replace("-", ":") if mac else "Unknown"
 
     def configure_static(self, interface: str, ip: str, gateway: str,
                          dns_servers: List[str]) -> None:
+        self.validate_interface(interface)
+        self.validate_ip(ip)
+        if gateway:
+            self.validate_ip(gateway)
+        for dns in dns_servers:
+            self.validate_dns(dns)
         prefix = 24
         if "/" in ip:
             ip, prefix = ip.split("/")
@@ -49,27 +59,44 @@ class PowerShellNetworkProvider(WindowsProvider, INetworkAdapter, IProvider):
                          f'-ServerAddresses {dns_str}')
 
     def configure_dhcp(self, interface: str) -> None:
+        self.validate_interface(interface)
         self._run_ps(f'Set-NetIPInterface -InterfaceAlias "{interface}" -Dhcp Enabled')
         self._run_ps(f'Set-DnsClientServerAddress -InterfaceAlias "{interface}" '
                      f'-ResetServerAddresses')
 
     def get_ip_address(self, interface: str) -> str:
-        ip = self._run_ps(f'(Get-NetIPAddress -InterfaceAlias "{interface}" '
-                          f'-AddressFamily IPv4 -ErrorAction SilentlyContinue).IPAddress')
-        return ip.split("\n")[0].strip() if ip else "Unassigned"
+        try:
+            self.validate_interface(interface)
+            ip = self._run_ps(f'(Get-NetIPAddress -InterfaceAlias "{interface}" '
+                              f'-AddressFamily IPv4 -ErrorAction SilentlyContinue).IPAddress')
+            return ip.split("\n")[0].strip() if ip else "Unassigned"
+        except (RuntimeError, ValueError):
+            return "Unassigned"
 
     def is_dhcp_enabled(self, interface: str) -> bool:
-        output = self._run_ps(f'(Get-NetIPInterface -InterfaceAlias "{interface}" '
-                              f'-AddressFamily IPv4).Dhcp')
-        return output.strip().lower() == "enabled"
+        try:
+            self.validate_interface(interface)
+            output = self._run_ps(f'(Get-NetIPInterface -InterfaceAlias "{interface}" '
+                                  f'-AddressFamily IPv4).Dhcp')
+            return output.strip().lower() == "enabled"
+        except (RuntimeError, ValueError):
+            return False
 
     def get_gateway(self, interface: str) -> str:
-        gw = self._run_ps(f'(Get-NetRoute -InterfaceAlias "{interface}" '
-                          f'-DestinationPrefix "0.0.0.0/0" '
-                          f'-ErrorAction SilentlyContinue).NextHop')
-        return gw if gw else "None"
+        try:
+            self.validate_interface(interface)
+            gw = self._run_ps(f'(Get-NetRoute -InterfaceAlias "{interface}" '
+                              f'-DestinationPrefix "0.0.0.0/0" '
+                              f'-ErrorAction SilentlyContinue).NextHop')
+            return gw if gw else "None"
+        except (RuntimeError, ValueError):
+            return "None"
 
     def get_dns_servers(self, interface: str) -> List[str]:
-        output = self._run_ps(f'(Get-DnsClientServerAddress -InterfaceAlias "{interface}" '
-                              f'-AddressFamily IPv4).ServerAddresses')
-        return [l.strip() for l in output.split("\n") if l.strip()] if output else []
+        try:
+            self.validate_interface(interface)
+            output = self._run_ps(f'(Get-DnsClientServerAddress -InterfaceAlias "{interface}" '
+                                  f'-AddressFamily IPv4).ServerAddresses')
+            return [l.strip() for l in output.split("\n") if l.strip()] if output else []
+        except (RuntimeError, ValueError):
+            return []

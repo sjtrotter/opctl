@@ -24,10 +24,13 @@ class IfconfigProvider(LinuxProvider, INetworkAdapter, IProvider):
             return []
 
     def set_link_state(self, interface: str, state: str) -> None:
+        self.validate_interface(interface)
         flag = "up" if state.lower() == "up" else "down"
         self._run(["ifconfig", interface, flag])
 
     def set_mac_address(self, interface: str, mac: str) -> None:
+        self.validate_interface(interface)
+        self.validate_mac(mac)
         self._run(["ifconfig", interface, "hw", "ether", mac])
 
     def get_mac_address(self, interface: str) -> str:
@@ -38,6 +41,12 @@ class IfconfigProvider(LinuxProvider, INetworkAdapter, IProvider):
             return "Unknown"
 
     def configure_static(self, interface: str, ip: str, gateway: str, dns_servers: List[str]) -> None:
+        self.validate_interface(interface)
+        self.validate_ip(ip)
+        if gateway:
+            self.validate_ip(gateway)
+        for dns in dns_servers:
+            self.validate_dns(dns)
         addr, prefix = (ip.split("/") + ["24"])[:2]
         # Convert prefix length to dotted netmask
         bits = int(prefix)
@@ -55,6 +64,7 @@ class IfconfigProvider(LinuxProvider, INetworkAdapter, IProvider):
                     f.write(f"nameserver {dns}\n")
 
     def configure_dhcp(self, interface: str) -> None:
+        self.validate_interface(interface)
         self._run(["ifconfig", interface, "0.0.0.0"])
         self._run(["dhclient", interface])
 

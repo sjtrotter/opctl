@@ -22,9 +22,12 @@ class Iproute2Provider(LinuxProvider, INetworkAdapter, IProvider):
             return []
 
     def set_link_state(self, interface: str, state: str) -> None:
+        self.validate_interface(interface)
         self._run(["ip", "link", "set", interface, state.lower()])
 
     def set_mac_address(self, interface: str, mac: str) -> None:
+        self.validate_interface(interface)
+        self.validate_mac(mac)
         self._run(["ip", "link", "set", interface, "address", mac])
 
     def get_mac_address(self, interface: str) -> str:
@@ -35,6 +38,12 @@ class Iproute2Provider(LinuxProvider, INetworkAdapter, IProvider):
             return "Unknown"
 
     def configure_static(self, interface: str, ip: str, gateway: str, dns_servers: List[str]) -> None:
+        self.validate_interface(interface)
+        self.validate_ip(ip)
+        if gateway:
+            self.validate_ip(gateway)
+        for dns in dns_servers:
+            self.validate_dns(dns)
         self._run(["ip", "addr", "flush", "dev", interface])
         self._run(["ip", "addr", "add", ip, "dev", interface])
         if gateway:
@@ -45,6 +54,7 @@ class Iproute2Provider(LinuxProvider, INetworkAdapter, IProvider):
                     f.write(f"nameserver {dns}\n")
 
     def configure_dhcp(self, interface: str) -> None:
+        self.validate_interface(interface)
         self._run(["ip", "addr", "flush", "dev", interface])
         self._run(["dhclient", interface])
 
