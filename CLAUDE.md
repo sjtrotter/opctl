@@ -169,13 +169,14 @@ Note the shape: the **outer** key is the family (`"v4"`/`"v6"`); the inner keys 
   `handler`, so for them `cli.main()` falls back to `COMMAND_SCHEMA["hostname"]["handler"]` (which is
   `handle_config`) at `cli.py:90`. This fallback branch is load-bearing, not dead. `execute` /
   `write` / `show` (type `action`) have their own handlers.
-- **The live handlers are inline at the top of `command_schema.py`.** `opctl/handlers.py` is a stale,
-  unused, *divergent* copy (imported by nothing) — and not identical: it reads the `value` payload
-  key and threads mode/interface context, which the live inline copies do not. Edit the inline copies
-  in `command_schema.py`, not `handlers.py`.
-- **Zone-name asymmetry:** the JSON/API zone is singular `target`, the in-memory attribute is
-  `raw_targets`, and `compile()` emits plural `targets`. `BulkConfigureUseCase` accepts plural bucket
-  names (`targets`/`trusted`/`excludes`) and **appends** rather than replaces.
+- **The live handlers are inline at the top of `command_schema.py`** (`handle_execute` /
+  `handle_show` / `handle_write` / `handle_config`) — edit those.
+- **Firewall rule commands** (`trusted` / `target` / `excluded`, valid in `policy` and `interface`
+  modes) stage via `handle_config` → `BulkConfigureUseCase._stage_rules`, which **appends** each value
+  to the named zone. Global rules arrive under the `policy` payload key; per-interface rules under
+  `interface_config`.
+- **Zone-name asymmetry:** the JSON/API/command zone is singular `target`, but the in-memory
+  attribute is `raw_targets` and `OpPolicy.compile()` emits plural `targets`. Easy to mishandle.
 - **Keep the domain pure:** `OpPolicy.compile()` receives the parser as an argument; don't import
   `IPParser` into `domain/models/`.
 - **`session.json` is per-CWD** and gitignored (transient, per-machine staged state).
@@ -184,21 +185,7 @@ Note the shape: the **outer** key is the family (`"v4"`/`"v6"`); the inner keys 
 
 These are real and worth knowing when working in the code — they are not yet fixed:
 
-- **Firewall zone rules have no CLI/shell verb.** The `policy` mode exists but no `setting` is bound
-  to it, and nothing emits the `targets`/`trusted`/`excludes` buckets. Zones can currently only be
-  populated by editing `session.json` directly. The full engine (parse → subtract → collapse → apply)
-  is otherwise complete.
 - `IptablesProvider.apply_ipv6_blocks/allows` are `pass` (no-ops) — IPv6 firewalling is silently not
-  applied under iptables (would need `ip6tables`).
-- `show <target>` / `write <file>` positionals are dropped: the front-ends store the positional under
-  `payload["value"]`, but `handle_show`/`handle_write` read `payload.get("target")`. So `show` always
-  shows `edits` and `write` always targets `session.json`.
-- **POSIX `interface`/`ntp` commands mis-stage `enable`/`disable`.** Those are `store_true` flags that
-  argparse always sets to `False`; `resolve_posix_payload` keeps `False` values, so
-  `BulkConfigureUseCase` always sees *both* the `enable` and `disable` keys, and its key-presence
-  checks let the `disable` branch win — forcing `enabled=False`. Hence `opctl interface <name> …`
-  stages the NIC down and `opctl ntp --enable` stages NTP disabled. These settings work correctly
-  only via the interactive shell, which sends one key at a time.
-- `RemoveRuleUseCase` references `profile.policy` (no such attribute; it's `global_policy`) and
-  `ImportConfigUseCase` calls `OpProfile(imported_data)` instead of `OpProfile.from_dict(...)`. Both
-  are also unwired (exported in `use_cases/__init__.py` but bound to no command).
+  applied under iptables (would need `ip6tables`). Tracked in #20.
+- `ImportConfigUseCase` calls `OpProfile(imported_data)` instead of `OpProfile.from_dict(...)`, so it
+  discards the imported profile, and it is not wired to any command. Tracked in #2.

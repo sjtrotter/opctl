@@ -78,12 +78,31 @@ class TestBulkConfigureUseCase:
         finally:
             _cleanup(path)
 
-    def test_stages_global_target(self):
+    def test_stages_global_firewall_rules(self):
         repo, path = _tmp_repo()
         try:
-            BulkConfigureUseCase(repo).execute({"targets": "192.168.1.0/24"})
-            state = repo.load_state()
-            assert "192.168.1.0/24" in state["global_policy"]["target"]
+            BulkConfigureUseCase(repo).execute({"policy": {
+                "target": ["192.168.1.0/24"],
+                "trusted": ["10.0.0.0/8"],
+                "excluded": ["10.0.5.0/24"],
+            }})
+            gp = repo.load_state()["global_policy"]
+            assert "192.168.1.0/24" in gp["target"]
+            assert "10.0.0.0/8" in gp["trusted"]
+            assert "10.0.5.0/24" in gp["excluded"]
+        finally:
+            _cleanup(path)
+
+    def test_stages_interface_firewall_rules(self):
+        repo, path = _tmp_repo()
+        try:
+            BulkConfigureUseCase(repo).execute({
+                "interface_name": "eth0",
+                "interface_config": {"excluded": ["10.0.0.0/8"], "target": "1.2.3.4"},
+            })
+            pol = repo.load_state()["interfaces"]["eth0"]["policy"]
+            assert "10.0.0.0/8" in pol["excluded"]
+            assert "1.2.3.4" in pol["target"]  # a bare string is accepted, not only a list
         finally:
             _cleanup(path)
 
@@ -259,6 +278,22 @@ class TestCommitPolicyUseCase:
             assert report.success is False
             assert any(s.status == "failed" for s in report.steps)
             assert any(s.status == "skipped" for s in report.steps)
+        finally:
+            _cleanup(path)
+
+    def test_invalid_firewall_rule_fails_and_rolls_back(self):
+        # A bad staged rule must fail the commit (and roll back), not crash:
+        # compile() runs inside the tracked step.
+        state = {"system": {"hostname": "tgt"},
+                 "global_policy": {"trusted": [], "target": ["not-an-ip"], "excluded": []}}
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        sys_m.get_hostname.return_value = "old"
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert report.success is False
+            assert report.rolled_back is True
+            assert any(s.status == "failed" and "global policy" in s.name for s in report.steps)
         finally:
             _cleanup(path)
 

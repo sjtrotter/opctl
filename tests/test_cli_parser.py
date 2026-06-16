@@ -86,6 +86,22 @@ class TestCliParser:
             self.parser.parse_args(["notacommand"])
         assert exc_info.value.code == 2
 
+    def test_policy_target_flag(self):
+        args = self.parser.parse_args(["policy", "--target", "10.0.0.0/24"])
+        assert args.command == "policy"
+        assert args.target == ["10.0.0.0/24"]
+
+    def test_policy_trusted_and_excluded(self):
+        args = self.parser.parse_args(
+            ["policy", "--trusted", "10.0.0.0/8", "--excluded", "10.0.5.0/24"])
+        assert args.trusted == ["10.0.0.0/8"]
+        assert args.excluded == ["10.0.5.0/24"]
+
+    def test_interface_excluded_flag(self):
+        args = self.parser.parse_args(["interface", "eth0", "--excluded", "192.168.0.0/16"])
+        assert args.iface_target == "eth0"
+        assert args.excluded == ["192.168.0.0/16"]
+
 
 class TestResolvePosixPayload:
     """Translation from the argparse namespace into the standardized payload dict."""
@@ -121,3 +137,15 @@ class TestResolvePosixPayload:
         payload = resolve_posix_payload(args)
         assert payload["ntp"].get("enable") is True
         assert "disable" not in payload["ntp"]
+
+    def test_policy_target_routes_to_policy_payload(self):
+        # The firewall 'target' setting must survive into the payload — it must NOT
+        # be dropped by the old show/write 'target' positional exclusion.
+        args = self.parser.parse_args(["policy", "--target", "10.0.0.0/24"])
+        payload = resolve_posix_payload(args)
+        assert payload["policy"]["target"] == ["10.0.0.0/24"]
+
+    def test_interface_firewall_rule_in_config(self):
+        args = self.parser.parse_args(["interface", "eth0", "--excluded", "192.168.0.0/16"])
+        payload = resolve_posix_payload(args)
+        assert payload["interface_config"]["excluded"] == ["192.168.0.0/16"]
