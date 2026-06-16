@@ -1,5 +1,6 @@
 import pytest
 from opctl.cli_parser import build_parser
+from opctl.cli import resolve_posix_payload
 
 
 class TestCliParser:
@@ -84,3 +85,39 @@ class TestCliParser:
         with pytest.raises(SystemExit) as exc_info:
             self.parser.parse_args(["notacommand"])
         assert exc_info.value.code == 2
+
+
+class TestResolvePosixPayload:
+    """Translation from the argparse namespace into the standardized payload dict."""
+
+    def setup_method(self):
+        self.parser = build_parser()
+
+    def test_unset_store_true_flags_are_dropped(self):
+        # Regression for #16: --enable/--disable default to False in the namespace,
+        # and propagating them stages the interface as disabled.
+        args = self.parser.parse_args(["interface", "eth0", "--ip", "10.0.0.5/24", "--mode", "static"])
+        payload = resolve_posix_payload(args)
+        cfg = payload["interface_config"]
+        assert "enable" not in cfg
+        assert "disable" not in cfg
+        assert cfg["ip"] == ["10.0.0.5/24"]
+        assert cfg["mode"] == "static"
+
+    def test_explicit_disable_is_kept(self):
+        args = self.parser.parse_args(["interface", "eth0", "--disable"])
+        payload = resolve_posix_payload(args)
+        assert payload["interface_config"].get("disable") is True
+
+    def test_explicit_enable_is_kept_without_implicit_disable(self):
+        args = self.parser.parse_args(["interface", "eth0", "--enable"])
+        payload = resolve_posix_payload(args)
+        cfg = payload["interface_config"]
+        assert cfg.get("enable") is True
+        assert "disable" not in cfg
+
+    def test_ntp_enable_does_not_leak_disable(self):
+        args = self.parser.parse_args(["ntp", "--enable"])
+        payload = resolve_posix_payload(args)
+        assert payload["ntp"].get("enable") is True
+        assert "disable" not in payload["ntp"]

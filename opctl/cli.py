@@ -22,9 +22,20 @@ def resolve_posix_payload(args) -> Dict[str, Any]:
             command = cmd_name
             break
 
+    # store_true flags (e.g. --enable/--disable) default to False in the argparse
+    # namespace even when the user never passed them. Propagating those False values
+    # would always inject both the 'enable' and 'disable' keys downstream, so a command
+    # like `opctl interface eth0 --ip ...` would stage the interface as disabled.
+    # Keep a store_true flag only when it was actually set.
+    store_true_flags = {
+        name for name, cfg in COMMAND_SCHEMA.items()
+        if cfg.get("action") == "store_true"
+    }
     settings_provided = {
-        k: v for k, v in arg_dict.items() 
-        if v is not None and k not in ["command", "iface_target", "target"]
+        k: v for k, v in arg_dict.items()
+        if v is not None
+        and k not in ["command", "iface_target", "target"]
+        and not (k in store_true_flags and v is False)
     }
     
     # Notice we inject _mode so the 'show' handler works exactly like the Shell
