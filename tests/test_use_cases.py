@@ -10,6 +10,7 @@ from opctl.use_cases.commit_policy_uc import CommitPolicyUseCase
 from opctl.use_cases.list_interfaces_uc import ListInterfacesUseCase
 from opctl.use_cases.remove_rule_uc import RemoveRuleUseCase
 from opctl.use_cases.view_status_uc import ViewStatusUseCase
+from opctl.use_cases.status_report_uc import StatusReportUseCase
 
 
 def _tmp_repo(initial_state=None):
@@ -299,5 +300,97 @@ class TestViewStatusUseCase:
         try:
             data = ViewStatusUseCase(repo, sys_m, net_m).execute()
             assert data["System"]["Hostname"]["match"] is False
+            assert data["System"]["Hostname"]["state"] == "changed"
+        finally:
+            _cleanup(path)
+
+    def test_unstaged_hostname_is_unset(self):
+        repo, path = _tmp_repo({})
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        net_m = MagicMock()
+        net_m.get_available_interfaces.return_value = []
+        net_m.get_dns_servers.return_value = []
+        try:
+            data = ViewStatusUseCase(repo, sys_m, net_m).execute()
+            assert data["System"]["Hostname"]["state"] == "unset"
+        finally:
+            _cleanup(path)
+
+    def test_staged_only_firewall_is_not_synced(self):
+        # Regression: firewall rules have no live equivalent and must report
+        # 'staged', never a misleading 'synced'/SYNC.
+        repo, path = _tmp_repo({"global_policy": {"trusted": [], "target": ["10.0.0.0/24"], "excluded": []}})
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        net_m = MagicMock()
+        net_m.get_available_interfaces.return_value = []
+        net_m.get_dns_servers.return_value = []
+        try:
+            data = ViewStatusUseCase(repo, sys_m, net_m).execute()
+            assert data["Global Policy"]["V4 Targets"]["state"] == "staged"
+            assert data["Global Policy"]["V4 Trusted"]["state"] == "unset"
+        finally:
+            _cleanup(path)
+
+
+class TestStatusReportUseCase:
+
+    def _net(self, **overrides):
+        net_m = MagicMock()
+        net_m.get_available_interfaces.return_value = overrides.get("ifaces", [])
+        net_m.get_dns_servers.return_value = []
+        return net_m
+
+    def test_empty_profile_reports_nothing_staged(self):
+        repo, path = _tmp_repo({})
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        try:
+            out = "\n".join(StatusReportUseCase(repo, sys_m, self._net()).execute("root"))
+            assert "No staged configuration" in out
+        finally:
+            _cleanup(path)
+
+    def test_changes_are_bucketed_and_no_fake_sync(self):
+        state = {
+            "system": {"hostname": "recon-01"},
+            "interfaces": {"eth0": {
+                "mode": "static", "ip_addresses": ["10.10.0.5/24"],
+                "gateway": "10.10.0.1", "dns_servers": [], "enabled": True,
+            }},
+        }
+        repo, path = _tmp_repo(state)
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        net_m = self._net(ifaces=["eth0"])
+        net_m.get_mac_address.return_value = "aa:bb:cc:dd:ee:01"
+        net_m.get_ip_address.return_value = "10.0.0.9"
+        net_m.get_gateway.return_value = "10.0.0.1"
+        net_m.is_dhcp_enabled.return_value = True
+        try:
+            out = "\n".join(StatusReportUseCase(repo, sys_m, net_m).execute("root"))
+            assert "staged vs live" in out
+            assert "CHANGES" in out
+            assert "recon-01" in out and "->" in out
+            # empty firewall zones must not appear as noise
+            assert "v4 trusted" not in out
+        finally:
+            _cleanup(path)
+
+    def test_staged_only_listed_separately(self):
+        state = {
+            "system": {"hostname": "", "unmanaged_policy": "isolate"},
+            "global_policy": {"trusted": [], "target": ["10.0.0.0/24"], "excluded": []},
+        }
+        repo, path = _tmp_repo(state)
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        try:
+            out = "\n".join(StatusReportUseCase(repo, sys_m, self._net()).execute("root"))
+            assert "STAGED" in out
+            assert "Isolate" in out
+            assert "10.0.0.0/24" in out
+            assert "CHANGES" not in out  # nothing comparable is staged
         finally:
             _cleanup(path)
