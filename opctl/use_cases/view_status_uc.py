@@ -2,67 +2,86 @@ from opctl.domain.models.profile import OpProfile
 from opctl.domain.interfaces import IPolicyRepository, ISystemAdapter, INetworkAdapter
 from opctl.domain.services.ip_parser import IPParser
 
+
 class ViewStatusUseCase:
+    """Builds the staged-vs-live comparison data.
+
+    Every field carries a ``state`` so the presenter can render honestly:
+      - ``changed`` — has a live value that differs from the staged intent
+      - ``synced``  — has a live value equal to the staged intent
+      - ``staged``  — staged, but there is no live equivalent to compare against
+      - ``unset``   — not configured; nothing to show
+    """
+
     def __init__(self, repo: IPolicyRepository, sys_os: ISystemAdapter, net_os: INetworkAdapter):
         self.repo = repo
         self.sys_os = sys_os
         self.net_os = net_os
 
+    @staticmethod
+    def _field(staged, live, *, comparable: bool, present: bool, match: bool = False) -> dict:
+        if not present:
+            state = "unset"
+        elif not comparable:
+            state = "staged"
+        else:
+            state = "synced" if match else "changed"
+        return {"staged": staged, "live": live, "match": bool(match), "state": state}
+
     def execute(self) -> dict:
         staged_dict = self.repo.load_state()
         profile = OpProfile.from_dict(staged_dict)
-        
+
         # --- OS QUERIES ---
         live_hostname = self.sys_os.get_hostname()
         available_ifaces = self.net_os.get_available_interfaces()
-        
+
         live_dns_set = set()
         for iface in available_ifaces:
             live_dns_set.update(self.net_os.get_dns_servers(iface))
         live_dns = list(live_dns_set)
 
-        # --- BUILD DATA DICTIONARY ---
-        # The keys here are literal display names. The StatusReportUseCase will just blindly print them.
         report_data = {
             "System": {
-                "Hostname": {
-                    "staged": profile.system.hostname or "N/A",
-                    "live": live_hostname,
-                    "match": profile.system.hostname == live_hostname if profile.system.hostname else False
-                },
-                "Unmanaged Policy": {
-                    "staged": profile.system.unmanaged_policy.title(),
-                    "live": "N/A",
-                    "match": True # No live OS equivalent to verify against generically yet
-                },
-                "Global DNS": {
-                    "staged": ",".join(profile.network.global_dns) if profile.network.global_dns else "OS Default",
-                    "live": ",".join(live_dns) if live_dns else "None",
-                    "match": set(profile.network.global_dns) == set(live_dns) if profile.network.global_dns else False
-                }
+                "Hostname": self._field(
+                    profile.system.hostname or "N/A", live_hostname,
+                    comparable=True, present=bool(profile.system.hostname),
+                    match=profile.system.hostname == live_hostname,
+                ),
+                "Unmanaged Policy": self._field(
+                    profile.system.unmanaged_policy.title(), "N/A",
+                    comparable=False, present=profile.system.unmanaged_policy != "ignore",
+                ),
+                "Global DNS": self._field(
+                    ",".join(profile.network.global_dns) if profile.network.global_dns else "OS Default",
+                    ",".join(live_dns) if live_dns else "None",
+                    comparable=True, present=bool(profile.network.global_dns),
+                    match=set(profile.network.global_dns) == set(live_dns),
+                ),
             },
             "NTP": {
-                "Enabled": {
-                    "staged": str(profile.ntp.enabled),
-                    "live": "N/A", 
-                    "match": True
-                },
-                "Servers": {
-                    "staged": ",".join(profile.ntp.servers) if profile.ntp.servers else "None",
-                    "live": "N/A",
-                    "match": True
-                }
+                "Enabled": self._field(
+                    str(profile.ntp.enabled), "N/A",
+                    comparable=False, present=profile.ntp.enabled,
+                ),
+                "Servers": self._field(
+                    ",".join(profile.ntp.servers) if profile.ntp.servers else "None", "N/A",
+                    comparable=False, present=bool(profile.ntp.servers),
+                ),
             },
             "Global Policy": {},
-            "Interfaces": {}
+            "Interfaces": {},
         }
 
-        # --- GLOBAL FIREWALL ---
+        # --- GLOBAL FIREWALL (staged-only: no generic live equivalent) ---
         gp = profile.global_policy.compile(IPParser.parse)
         for v in ["v4", "v6"]:
-            report_data["Global Policy"][f"{v.upper()} Targets"] = {"staged": ",".join(gp[v]["targets"]) or "None", "live": "N/A", "match": True}
-            report_data["Global Policy"][f"{v.upper()} Trusted"] = {"staged": ",".join(gp[v]["trusted"]) or "None", "live": "N/A", "match": True}
-            report_data["Global Policy"][f"{v.upper()} Blocked"] = {"staged": ",".join(gp[v]["blocked"]) or "None", "live": "N/A", "match": True}
+            for cat in ["targets", "trusted", "blocked"]:
+                rules = gp[v][cat]
+                report_data["Global Policy"][f"{v.upper()} {cat.title()}"] = self._field(
+                    ",".join(rules) if rules else "None", "N/A",
+                    comparable=False, present=bool(rules),
+                )
 
         # --- INTERFACES ---
         for iname, iface_profile in profile.interfaces.items():
@@ -78,38 +97,45 @@ class ViewStatusUseCase:
             intent_is_dhcp = iface_profile.mode.lower() == "dhcp"
             mode_match = (intent_is_dhcp == os_is_dhcp)
             staged_ips = iface_profile.ip_addresses
+            has_mac_intent = iface_profile.randomize_mac or bool(iface_profile.mac_address)
 
             lp = iface_profile.policy.compile(IPParser.parse)
 
-            report_data["Interfaces"][iname] = {
-                "Admin State": {
-                    "staged": "Up" if iface_profile.enabled else "Down",
-                    "live": "Up", 
-                    "match": True
-                },
-                "Mode": {
-                    "staged": iface_profile.mode.upper(), 
-                    "live": "DHCP" if os_is_dhcp else "STATIC", 
-                    "match": mode_match
-                },
-                "MAC Address": {
-                    "staged": "Random" if iface_profile.randomize_mac else (iface_profile.mac_address or "Auto"), 
-                    "live": live_mac, 
-                    "match": iface_profile.mac_address.lower() == live_mac.lower() if iface_profile.mac_address else False
-                },
-                "IP Address": {
-                    "staged": ",".join(staged_ips) if staged_ips else "DHCP", 
-                    "live": f"DHCP ({live_ip})" if (intent_is_dhcp and os_is_dhcp) else live_ip, 
-                    "match": mode_match if intent_is_dhcp else (live_ip in staged_ips if staged_ips else False)
-                },
-                "Gateway": {
-                    "staged": iface_profile.gateway or "DHCP", 
-                    "live": f"DHCP ({live_gw})" if (intent_is_dhcp and os_is_dhcp) else live_gw, 
-                    "match": mode_match if intent_is_dhcp else (iface_profile.gateway == live_gw)
-                },
-                "Local V4 Targets": {"staged": ",".join(lp["v4"]["targets"]) or "None", "live": "N/A", "match": True},
-                "Local V4 Trusted": {"staged": ",".join(lp["v4"]["trusted"]) or "None", "live": "N/A", "match": True},
-                "Local V4 Blocked": {"staged": ",".join(lp["v4"]["blocked"]) or "None", "live": "N/A", "match": True}
+            iface_fields = {
+                "Admin State": self._field(
+                    "Up" if iface_profile.enabled else "Down", "Up",
+                    comparable=True, present=True, match=iface_profile.enabled,
+                ),
+                "Mode": self._field(
+                    iface_profile.mode.upper(), "DHCP" if os_is_dhcp else "STATIC",
+                    comparable=True, present=True, match=mode_match,
+                ),
+                "MAC Address": self._field(
+                    "Random" if iface_profile.randomize_mac else (iface_profile.mac_address or "Auto"),
+                    live_mac,
+                    comparable=True, present=has_mac_intent,
+                    match=iface_profile.mac_address.lower() == live_mac.lower() if iface_profile.mac_address else False,
+                ),
+                "IP Address": self._field(
+                    ",".join(staged_ips) if staged_ips else "DHCP",
+                    f"DHCP ({live_ip})" if (intent_is_dhcp and os_is_dhcp) else live_ip,
+                    comparable=True, present=True,
+                    match=mode_match if intent_is_dhcp else (live_ip in staged_ips if staged_ips else False),
+                ),
+                "Gateway": self._field(
+                    iface_profile.gateway or "DHCP",
+                    f"DHCP ({live_gw})" if (intent_is_dhcp and os_is_dhcp) else live_gw,
+                    comparable=True, present=intent_is_dhcp or bool(iface_profile.gateway),
+                    match=mode_match if intent_is_dhcp else (iface_profile.gateway == live_gw),
+                ),
             }
+            for cat in ["targets", "trusted", "blocked"]:
+                rules = lp["v4"][cat]
+                iface_fields[f"Local V4 {cat.title()}"] = self._field(
+                    ",".join(rules) if rules else "None", "N/A",
+                    comparable=False, present=bool(rules),
+                )
+
+            report_data["Interfaces"][iname] = iface_fields
 
         return report_data

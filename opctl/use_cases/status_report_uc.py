@@ -1,54 +1,101 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from .view_status_uc import ViewStatusUseCase
 from ..domain.interfaces import IPolicyRepository, ISystemAdapter, INetworkAdapter
+
 
 class Colors:
     GREEN = '\033[92m'
     RED = '\033[91m'
+    YELLOW = '\033[93m'
     CYAN = '\033[96m'
     RESET = '\033[0m'
     BOLD = '\033[1m'
 
+
 class StatusReportUseCase:
+    """Renders the staged-vs-live comparison as a diff-first report.
+
+    Changes (what `execute` will apply) lead, followed by fields already in sync,
+    then staged-only fields that have no live counterpart. Fields that are not
+    configured are omitted entirely.
+    """
+
     def __init__(self, repo: IPolicyRepository, sys_os: ISystemAdapter, net_os: INetworkAdapter):
         self.view_status = ViewStatusUseCase(repo, sys_os, net_os)
 
-    def _format_row(self, prop: str, staged: str, live: str, match: bool) -> str:
-        staged_str = str(staged)[:25]
-        live_str = str(live)[:25]
-        status_text = f"{Colors.GREEN}[ SYNC ]{Colors.RESET}" if match else f"{Colors.RED}[ DIFF ]{Colors.RESET}"
-        return f"{prop:<20} {staged_str:<25} {live_str:<25} {status_text}"
-
     def execute(self, mode: str = "root", target_interface: Optional[str] = None) -> List[str]:
         data = self.view_status.execute()
-        header = f"{'PROPERTY':<20} {'STAGED':<25} {'LIVE':<25} STATUS"
-        lines: List[str] = []
+        rows = self._collect(data, mode, target_interface)
 
-        def print_section(title, section_data):
-            lines.append(f"\n{Colors.BOLD}{Colors.CYAN}=== [ {title.upper()} ] ==={Colors.RESET}")
-            lines.append(header); lines.append("-" * 82)
-            for key, val in section_data.items():
-                lines.append(self._format_row(key, val["staged"], val["live"], val["match"]))
+        if not rows:
+            return ["", "[*] No staged configuration for this context.", ""]
 
-        # Context-Aware Rendering
-        if mode in ["root", "system", "configure"]:
-            print_section("Global System", data["System"])
-            
-        if mode in ["root", "ntp", "configure"]:
-            print_section("NTP Services", data["NTP"])
+        changed = [r for r in rows if r["state"] == "changed"]
+        synced = [r for r in rows if r["state"] == "synced"]
+        staged = [r for r in rows if r["state"] == "staged"]
 
-        if mode in ["root", "policy", "configure"]:
-            print_section("Global Firewall", data["Global Policy"])
+        # Column widths shared across groups so everything lines up.
+        sec_w = max(len(r["section"]) for r in rows)
+        fld_w = max(len(r["field"]) for r in rows)
+        live_w = max((len(str(r["live"])) for r in changed), default=0)
 
-        if mode in ["root", "interface", "configure"]:
-            for iface_name, iface_data in data["Interfaces"].items():
-                # Filter specific interface if requested
-                if target_interface and iface_name != target_interface:
-                    continue
-                print_section(f"Interface: {iface_name}", iface_data)
+        lines: List[str] = [
+            "",
+            f"{Colors.BOLD}opctl · staged vs live{Colors.RESET}   "
+            f"{Colors.YELLOW}{len(changed)} change{Colors.RESET} · "
+            f"{Colors.GREEN}{len(synced)} in sync{Colors.RESET} · "
+            f"{Colors.CYAN}{len(staged)} staged{Colors.RESET}",
+        ]
 
-        if not lines:
-            lines.append("[*] No staged configurations found for this context.")
-            
-        lines.append("") 
+        if changed:
+            lines.append("")
+            lines.append(f"{Colors.BOLD}{Colors.YELLOW}CHANGES{Colors.RESET}  (apply with `execute`)")
+            for r in changed:
+                lines.append(
+                    f"  {r['section']:<{sec_w}}  {r['field']:<{fld_w}}  "
+                    f"{str(r['live']):<{live_w}} {Colors.YELLOW}->{Colors.RESET} {r['staged']}"
+                )
+
+        if synced:
+            lines.append("")
+            lines.append(f"{Colors.BOLD}{Colors.GREEN}IN SYNC{Colors.RESET}")
+            for r in synced:
+                lines.append(f"  {r['section']:<{sec_w}}  {r['field']:<{fld_w}}  {r['staged']}")
+
+        if staged:
+            lines.append("")
+            lines.append(f"{Colors.BOLD}{Colors.CYAN}STAGED{Colors.RESET}  (no live value to compare)")
+            for r in staged:
+                lines.append(f"  {r['section']:<{sec_w}}  {r['field']:<{fld_w}}  {r['staged']}")
+
+        lines.append("")
         return lines
+
+    def _collect(self, data: dict, mode: str, target_interface: Optional[str]) -> List[Dict]:
+        rows: List[Dict] = []
+
+        def add(section: str, fields: dict) -> None:
+            for field_label, info in fields.items():
+                if info.get("state", "unset") == "unset":
+                    continue
+                rows.append({
+                    "section": section,
+                    "field": field_label.lower(),
+                    "staged": info["staged"],
+                    "live": info["live"],
+                    "state": info["state"],
+                })
+
+        if mode in ("root", "system", "configure"):
+            add("system", data["System"])
+        if mode in ("root", "ntp", "configure"):
+            add("ntp", data["NTP"])
+        if mode in ("root", "policy", "configure"):
+            add("firewall", data["Global Policy"])
+        if mode in ("root", "interface", "configure"):
+            for iname, fields in data["Interfaces"].items():
+                if target_interface and iname != target_interface:
+                    continue
+                add(iname, fields)
+
+        return rows
