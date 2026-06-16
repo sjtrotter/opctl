@@ -217,6 +217,51 @@ class TestCommitPolicyUseCase:
         finally:
             _cleanup(path)
 
+    def test_successful_commit_reports_all_steps_ok(self):
+        repo, path = _tmp_repo({"system": {"hostname": "tgt-box"}})
+        sys_m, net_m, fw_m = self._make_adapters()
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert report.success is True
+            assert report.rolled_back is False
+            assert report.steps and all(s.status == "ok" for s in report.steps)
+        finally:
+            _cleanup(path)
+
+    def test_rolls_back_to_snapshot_on_failure(self):
+        state = {
+            "system": {"hostname": "tgt-box"},
+            "interfaces": {"eth0": {
+                "mode": "static", "ip_addresses": ["10.0.0.5/24"], "gateway": "",
+                "dns_servers": [], "enabled": True, "mac_address": "aa:bb:cc:dd:ee:ff",
+            }},
+        }
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        sys_m.get_hostname.return_value = "old-host"
+        net_m.set_mac_address.side_effect = RuntimeError("device busy")
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert report.success is False
+            assert report.rolled_back is True
+            assert any(s.status == "failed" for s in report.steps)
+            # the pre-commit hostname snapshot is restored during rollback
+            sys_m.set_hostname.assert_any_call("old-host")
+        finally:
+            _cleanup(path)
+
+    def test_steps_after_failure_are_skipped(self):
+        repo, path = _tmp_repo({"system": {"hostname": "tgt-box"}})
+        sys_m, net_m, fw_m = self._make_adapters()
+        fw_m.flush_managed_rules.side_effect = RuntimeError("no firewall backend")
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert report.success is False
+            assert any(s.status == "failed" for s in report.steps)
+            assert any(s.status == "skipped" for s in report.steps)
+        finally:
+            _cleanup(path)
+
 
 class TestRemoveRuleUseCase:
 
