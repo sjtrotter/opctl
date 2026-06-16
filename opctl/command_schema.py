@@ -11,8 +11,28 @@ VALID_MODES = ["root", "configure", "system", "ntp", "policy", "interface"]
 # --- Handler Callbacks ---
 def handle_execute(repo, os_adapter, payload):
     print("[*] Engaging Radio Silence... Committing to hardware.")
-    CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
-    print("[+] Done.")
+    report = CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
+
+    marks = {"ok": "[ ok ]", "failed": "[FAIL]", "skipped": "[skip]"}
+    for step in report.steps:
+        line = f"  {marks.get(step.status, '[ ?? ]')} {step.name}"
+        if step.detail:
+            line += f"  ({step.detail})"
+        print(line)
+
+    if report.rolled_back:
+        print("\n[!] Commit failed — rolling back to the pre-commit state:")
+        for step in report.rollback_steps:
+            mark = marks["ok"] if step.status == "ok" else marks["failed"]
+            line = f"  {mark} {step.name}"
+            if step.detail:
+                line += f"  ({step.detail})"
+            print(line)
+        print("\n[!] System restored as closely as the OS layer allows. Review before retrying.")
+    elif report.success:
+        print("\n[+] Done. All steps applied.")
+    else:
+        print("\n[!] Commit incomplete.")
 
 def handle_show(repo, os_adapter, payload):
     payload = payload or {}
