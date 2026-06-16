@@ -105,6 +105,20 @@ class TestBulkConfigureUseCase:
         finally:
             _cleanup(path)
 
+    def test_interface_without_link_flags_stays_enabled(self):
+        # Regression for #16: staging interface config that omits enable/disable
+        # must leave the interface at its enabled-by-default state.
+        repo, path = _tmp_repo()
+        try:
+            BulkConfigureUseCase(repo).execute({
+                "interface_name": "eth0",
+                "interface_config": {"ip": ["10.0.0.5/24"], "mode": "static"}
+            })
+            state = repo.load_state()
+            assert state["interfaces"]["eth0"]["enabled"] is True
+        finally:
+            _cleanup(path)
+
 
 class TestCommitPolicyUseCase:
 
@@ -199,6 +213,32 @@ class TestCommitPolicyUseCase:
             CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
             net_m.set_link_state.assert_called_once_with("eth0", "down")
             net_m.configure_static.assert_not_called()
+        finally:
+            _cleanup(path)
+
+
+class TestRemoveRuleUseCase:
+
+    def test_removes_rule_from_global_policy(self):
+        # Regression for #19: the use case must target global_policy (not a
+        # nonexistent profile.policy attribute) and actually remove the rule.
+        state = {"global_policy": {"trusted": [], "target": ["10.0.0.0/24", "192.168.1.0/24"], "excluded": []}}
+        repo, path = _tmp_repo(state)
+        try:
+            RemoveRuleUseCase(repo).execute("target", ["10.0.0.0/24"])
+            result = repo.load_state()
+            assert "10.0.0.0/24" not in result["global_policy"]["target"]
+            assert "192.168.1.0/24" in result["global_policy"]["target"]
+        finally:
+            _cleanup(path)
+
+    def test_removing_absent_rule_is_noop(self):
+        state = {"global_policy": {"trusted": [], "target": ["10.0.0.0/24"], "excluded": []}}
+        repo, path = _tmp_repo(state)
+        try:
+            RemoveRuleUseCase(repo).execute("target", ["172.16.0.0/24"])
+            result = repo.load_state()
+            assert "10.0.0.0/24" in result["global_policy"]["target"]
         finally:
             _cleanup(path)
 

@@ -14,7 +14,7 @@ class RemoveRuleUseCase:
 
         # Remove the targets from the Domain
         for net in networks:
-            profile.policy.remove_rule(bucket, net)
+            profile.global_policy.remove_rule(bucket, net)
 
         # Save the updated state
         self.repo.save_state(profile.to_dict())

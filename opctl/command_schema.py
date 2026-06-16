@@ -15,7 +15,8 @@ def handle_execute(repo, os_adapter, payload):
     print("[+] Done.")
 
 def handle_show(repo, os_adapter, payload):
-    target = payload.get("target", "edits") if payload else "edits"
+    payload = payload or {}
+    target = payload.get("value") or "edits"
     if target == "interfaces":
         res = ListInterfacesUseCase(repo, os_adapter).execute()
         print("\n--- Available OS Network Interfaces ---")
@@ -23,12 +24,14 @@ def handle_show(repo, os_adapter, payload):
             m = "[*]" if iface["is_staged"] else "   "
             print(f"{m} {iface['name']:<15} MAC: {iface['mac']} IP: {iface['ip']}")
     else:
-        for line in StatusReportUseCase(repo, os_adapter, os_adapter).execute():
+        mode = payload.get("_mode", "root")
+        target_interface = payload.get("_interface")
+        for line in StatusReportUseCase(repo, os_adapter, os_adapter).execute(mode, target_interface):
             print(line)
 
 def handle_write(repo, os_adapter, payload):
-    target = payload.get("target", "session.json") if payload else "session.json"
-    target = target or "session.json"
+    payload = payload or {}
+    target = payload.get("value") or "session.json"
     ExportConfigUseCase(repo).execute(target)
     print(f"[*] Configuration saved to {target}")
 

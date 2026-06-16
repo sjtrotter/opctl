@@ -25,6 +25,31 @@ No build step is needed. The package itself has **zero third-party runtime depen
 Python stdlib, `requires-python >= 3.8`. The **test suite requires `pytest`** (the only dev
 dependency; it is not declared in `pyproject.toml`, so `pip install pytest` first if needed).
 
+## Engineering principles
+
+Hold every change to these standards. They are not aspirational — they are the bar for any code that
+lands here.
+
+- **Clean code.** Small, single-responsibility units; intention-revealing names; no dead code,
+  duplication, or commented-out blocks. Match the style, naming, and comment density of the
+  surrounding code. Add a behavior-covering test with every change. Leave each file clearer than you
+  found it.
+- **Domain-driven, layered architecture.** Respect the dependency rule — `opctl/domain/` imports
+  nothing from outer layers; use cases orchestrate; `infrastructure/` and `adapters/` depend inward,
+  never the reverse. Business rules live in the domain (models, services), **not** in handlers, the
+  shell, the CLI, or providers. Cross layer boundaries only through the ABC ports in
+  `domain/interfaces.py`, and keep all I/O, `subprocess`, and OS specifics inside
+  `infrastructure/` / `adapters/`.
+- **Python best practices.** PEP 8, type hints on public signatures, dataclasses for value objects,
+  stdlib (`ipaddress`, `pathlib`, `subprocess` list-form, …) over hand-rolled equivalents, explicit
+  exceptions over silent failure, and context managers for resources. Preserve the
+  **zero-runtime-dependency** rule (stdlib only).
+- **Deviations require prior developer approval and a written note.** If a task appears to need
+  breaking any principle above — logic in an adapter, a new runtime dependency, a layering shortcut,
+  an untested change — **stop and get the developer's sign-off first.** Once approved, record the
+  deviation at the call site (`# DEVIATION: <what> — <why> — approved by <who>, <date>`) and, when it
+  is architecturally notable, add a line to **Conventions & gotchas** below. Never deviate silently.
+
 ## Architecture
 
 **opctl** is a cross-platform (Linux + Windows) tactical network configurator — hostname, per-NIC
