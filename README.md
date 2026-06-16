@@ -70,6 +70,10 @@ opctl(config-if:eth0)# ip 10.10.0.5/24
 opctl(config-if:eth0)# mac random              # spoof a random MAC
 opctl(config-if:eth0)# dns 1.1.1.1 9.9.9.9
 opctl(config-if:eth0)# exit
+opctl(config)# policy                          # global firewall zones
+opctl(config-policy)# target 192.168.50.0/24   # allow the objective network
+opctl(config-policy)# excluded 192.168.50.13   # ...except this host (deny wins)
+opctl(config-policy)# exit
 opctl(config)# exit
 opctl# show                                    # diff staged config against the live system
 opctl# execute                                 # commit everything to the OS (needs root/admin)
@@ -83,17 +87,15 @@ commands valid there.
 
 ### One-shot POSIX CLI
 
-System settings and the stage/commit actions are available non-interactively:
+The same operations are available non-interactively:
 
 ```bash
-opctl system --hostname recon-01    # stage the hostname
-opctl system --dns 1.1.1.1 9.9.9.9  # stage global DNS
-opctl show                          # show the staged-vs-live diff
-opctl execute                       # commit staged config to the OS (run with sudo / as admin)
+opctl system --hostname recon-01                            # stage the hostname
+opctl interface eth0 --mode static --ip 10.10.0.5/24 --mac random   # configure a NIC
+opctl policy --target 192.168.50.0/24 --excluded 192.168.50.13      # global firewall zones
+opctl show                                                  # show the staged-vs-live diff
+opctl execute                                               # commit to the OS (run with sudo / as admin)
 ```
-
-Per-interface configuration (MAC/IP/mode/DNS) and NTP are best done from the interactive shell — the
-one-shot POSIX path for those is not reliable yet (see [Project status](#project-status)).
 
 > Committing changes shells out to privileged OS tools (`ip`, `nmcli`, `iptables`, `hostnamectl`,
 > PowerShell cmdlets, …), so `execute` must be run with root/administrator privileges.
@@ -151,9 +153,11 @@ All staged state lives in a single JSON file, resolved relative to the directory
 ```
 
 The firewall **zones** live in `global_policy` (host-wide) and in each interface's `policy`
-(bound to that NIC). Each accepts CIDRs, splat (`192.168.*.10`) and dash-range (`192.168.0-5.10`)
-notation for IPv4, strict CIDR for IPv6, and `IP:PORT` for port-scoped rules. At commit time,
-`excluded` is subtracted from `trusted`/`target` and the result is collapsed into minimal CIDR sets.
+(bound to that NIC). Set them with the `trusted` / `target` / `excluded` commands in `policy` or
+`interface` mode (e.g. `target 192.168.50.0/24`). Each accepts CIDRs, splat (`192.168.*.10`) and
+dash-range (`192.168.0-5.10`) notation for IPv4, strict CIDR for IPv6, and `IP:PORT` for port-scoped
+rules. At commit time, `excluded` is subtracted from `trusted`/`target` and the result is collapsed
+into minimal CIDR sets.
 
 ## Development
 
@@ -171,20 +175,17 @@ There is no build/compile step. Adding a command or flag is a single edit to
 
 ## Project status
 
-opctl is at **v0.1.0** and under active development. Working today: staging via the **interactive
-shell** (hostname, per-interface MAC/IP/mode/DNS/up-down, NTP enable/disable); the **one-shot POSIX
-CLI** for system settings (`--hostname`, `--dns`, `--unmanaged`) plus the `show` and `execute`
-actions; staged-vs-live diffing (`show`); and committing to Linux and Windows hosts (`execute`).
-Still being wired up:
+opctl is at **v0.1.0** and under active development. Working today across both the **interactive
+shell** and the **one-shot POSIX CLI**: hostname, per-interface MAC/IP/mode/DNS/up-down, NTP
+enable/disable, and firewall zone rules (`trusted`/`target`/`excluded`, global and per-interface);
+staged-vs-live diffing (`show`); and a transactional `execute` that commits to Linux and Windows
+hosts and rolls back on failure. Still being wired up:
 
-- **Firewall zone rules currently have no dedicated CLI/shell command** — the policy engine and
-  commit path are complete, but zones are populated by editing the `global_policy` / interface
-  `policy` blocks in `session.json` directly.
-- **Per-interface and NTP configuration via the one-shot POSIX CLI is not reliable yet** — the
-  `enable`/`disable` flag defaults leak through and stage the interface (or NTP) as disabled. Use the
-  interactive shell for these.
+- **Importing a saved playbook** (`ImportConfigUseCase`) is implemented but not yet wired to a
+  command.
 - IPv6 firewalling is a no-op under the `iptables` provider specifically (use `firewalld`/`ufw` for
   IPv6 blocking).
+- NTP currently stages enable/disable only; setting the server/pool list is in progress.
 
 ## License
 

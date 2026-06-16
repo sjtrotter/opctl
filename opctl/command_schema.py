@@ -57,8 +57,12 @@ def handle_write(repo, os_adapter, payload):
 
 def handle_config(repo, os_adapter, payload):
     BulkConfigureUseCase(repo).execute(payload)
-    # Get the first key of the payload to dynamically print what was staged
-    staged_item = list(payload.keys())[0] if payload else "settings"
+    payload = payload or {}
+    # Name what was staged without leaking internal context keys (e.g. "_mode").
+    if "interface_name" in payload:
+        staged_item = payload["interface_name"]
+    else:
+        staged_item = next((k for k in payload if not k.startswith("_")), "settings")
     print(f"[*] Configuration staged for {staged_item}")
 
 # --- Schema ---
@@ -220,5 +224,36 @@ COMMAND_SCHEMA = {
         "flags": ["--disable"],
         "handler": handle_config,
         "valid_modes": ["interface", "ntp"]
+    },
+
+    # === FIREWALL ZONE RULES ===
+    # Valid in 'policy' (global) and 'interface' (per-NIC) modes. The command name
+    # is the firewall zone; BulkConfigureUseCase appends each value to that zone.
+    "trusted": {
+        "type": "setting",
+        "category": "Firewall",
+        "nargs": "+",
+        "help": "Add trusted (allow) networks/hosts: CIDR, IP, splat, range, or IP:PORT",
+        "flags": ["--trusted", "-t"],
+        "handler": handle_config,
+        "valid_modes": ["policy", "interface"]
+    },
+    "target": {
+        "type": "setting",
+        "category": "Firewall",
+        "nargs": "+",
+        "help": "Add target (allow) networks/hosts: CIDR, IP, splat, range, or IP:PORT",
+        "flags": ["--target"],
+        "handler": handle_config,
+        "valid_modes": ["policy", "interface"]
+    },
+    "excluded": {
+        "type": "setting",
+        "category": "Firewall",
+        "nargs": "+",
+        "help": "Add excluded (deny) networks/hosts: overrides trusted/target",
+        "flags": ["--excluded", "-x"],
+        "handler": handle_config,
+        "valid_modes": ["policy", "interface"]
     }
 }

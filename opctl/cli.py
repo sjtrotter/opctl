@@ -31,10 +31,14 @@ def resolve_posix_payload(args) -> Dict[str, Any]:
         name for name, cfg in COMMAND_SCHEMA.items()
         if cfg.get("action") == "store_true"
     }
+    # "command" is the subparser name and "iface_target" is the interface
+    # positional — neither is a setting. ("target" is NOT excluded here: it is the
+    # name of a firewall setting; the show/write positional also named "target" is
+    # handled by the action branch below, which returns before settings_provided is used.)
     settings_provided = {
         k: v for k, v in arg_dict.items()
         if v is not None
-        and k not in ["command", "iface_target", "target"]
+        and k not in ["command", "iface_target"]
         and not (k in store_true_flags and v is False)
     }
     

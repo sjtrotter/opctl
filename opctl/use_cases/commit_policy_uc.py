@@ -85,9 +85,10 @@ class CommitPolicyUseCase:
              self.fw_os.flush_managed_rules,
              self.fw_os.flush_managed_rules,
              undo_name="flush managed firewall rules")
-        global_pol = profile.global_policy.compile(IPParser.parse)
+        # compile() runs inside the step so an invalid staged rule fails the
+        # commit (and rolls back) rather than raising before the transaction.
         step("firewall: apply global policy",
-             lambda: self._apply_policy(global_pol, interface=None))
+             lambda: self._apply_policy(profile.global_policy.compile(IPParser.parse), interface=None))
 
         # 3. Per-interface configuration
         for iname, iface in profile.interfaces.items():
@@ -110,9 +111,8 @@ class CommitPolicyUseCase:
                 step(f"{iname}: set MAC {iface.mac_address}",
                      lambda n=iname, m=iface.mac_address: self.net_os.set_mac_address(n, m))
 
-            local_pol = iface.policy.compile(IPParser.parse)
             step(f"{iname}: apply local policy",
-                 lambda lp=local_pol, n=iname: self._apply_policy(lp, interface=n))
+                 lambda p=iface.policy, n=iname: self._apply_policy(p.compile(IPParser.parse), interface=n))
 
             if iface.is_static():
                 primary_ip = iface.ip_addresses[0] if iface.ip_addresses else ""

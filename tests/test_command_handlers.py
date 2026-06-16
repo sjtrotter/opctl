@@ -4,7 +4,7 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 from opctl.adapters.json_repository import JsonPolicyRepository
-from opctl.command_schema import handle_show, handle_write
+from opctl.command_schema import handle_show, handle_write, handle_config
 
 
 def _tmp_repo(initial_state=None):
@@ -79,5 +79,30 @@ class TestHandleShow:
                 SR.return_value.execute.return_value = []
                 handle_show(repo, MagicMock(), {})
                 SR.return_value.execute.assert_called_once_with("root", None)
+        finally:
+            _cleanup(path)
+
+
+class TestHandleConfig:
+
+    def test_confirmation_does_not_leak_internal_keys(self, capsys):
+        repo, path = _tmp_repo({})
+        try:
+            handle_config(repo, MagicMock(),
+                          {"_mode": "policy", "_interface": None, "policy": {"target": ["10.0.0.0/24"]}})
+            out = capsys.readouterr().out
+            assert "_mode" not in out
+            assert "policy" in out
+        finally:
+            _cleanup(path)
+
+    def test_confirmation_names_the_interface(self, capsys):
+        repo, path = _tmp_repo({})
+        try:
+            handle_config(repo, MagicMock(),
+                          {"_mode": "interface", "_interface": "eth0",
+                           "interface_name": "eth0", "interface_config": {"trusted": ["192.168.0.0/16"]}})
+            out = capsys.readouterr().out
+            assert "eth0" in out
         finally:
             _cleanup(path)
