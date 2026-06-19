@@ -174,7 +174,10 @@ Note the shape: the **outer** key is the family (`"v4"`/`"v6"`); the inner keys 
 - **Firewall rule commands** (`trusted` / `target` / `excluded`, valid in `policy` and `interface`
   modes) stage via `handle_config` → `BulkConfigureUseCase._stage_rules`, which **appends** each value
   to the named zone. Global rules arrive under the `policy` payload key; per-interface rules under
-  `interface_config`.
+  `interface_config`. The canonical zone tuple lives once on the domain as `OpPolicy.ZONES`.
+- **Rule removal** is `no <zone> <network...>` (schema `type: "negate"`, handler `handle_remove` →
+  `RemoveRuleUseCase`). It is **shell-only**: `build_parser` only attaches `type=="setting"` entries
+  as POSIX flags, so a `negate` command never gets one.
 - **Zone-name asymmetry:** the JSON/API/command zone is singular `target`, but the in-memory
   attribute is `raw_targets` and `OpPolicy.compile()` emits plural `targets`. Easy to mishandle.
 - **Keep the domain pure:** `OpPolicy.compile()` receives the parser as an argument; don't import

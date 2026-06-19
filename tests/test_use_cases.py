@@ -323,6 +323,48 @@ class TestRemoveRuleUseCase:
         finally:
             _cleanup(path)
 
+    def test_removes_rule_from_interface_policy(self):
+        state = {"interfaces": {"eth0": {"policy": {
+            "trusted": [], "target": [], "excluded": ["10.0.0.0/8", "172.16.0.0/12"]}}}}
+        repo, path = _tmp_repo(state)
+        try:
+            RemoveRuleUseCase(repo).execute("excluded", ["10.0.0.0/8"], interface="eth0")
+            pol = repo.load_state()["interfaces"]["eth0"]["policy"]
+            assert "10.0.0.0/8" not in pol["excluded"]
+            assert "172.16.0.0/12" in pol["excluded"]
+        finally:
+            _cleanup(path)
+
+    def test_remove_from_unstaged_interface_is_noop(self):
+        repo, path = _tmp_repo({"global_policy": {"trusted": [], "target": ["10.0.0.0/24"], "excluded": []}})
+        try:
+            removed = RemoveRuleUseCase(repo).execute("excluded", ["1.2.3.4"], interface="eth99")
+            assert removed == 0
+            assert "10.0.0.0/24" in repo.load_state()["global_policy"]["target"]
+        finally:
+            _cleanup(path)
+
+    def test_removes_multiple_and_returns_actual_count(self):
+        state = {"global_policy": {"trusted": [],
+                 "target": ["10.0.0.0/24", "10.1.0.0/24", "10.2.0.0/24"], "excluded": []}}
+        repo, path = _tmp_repo(state)
+        try:
+            # two exist, one does not — only the two present should count
+            removed = RemoveRuleUseCase(repo).execute("target", ["10.0.0.0/24", "10.1.0.0/24", "172.16.0.0/24"])
+            assert removed == 2
+            tgt = repo.load_state()["global_policy"]["target"]
+            assert "10.2.0.0/24" in tgt
+            assert "10.0.0.0/24" not in tgt and "10.1.0.0/24" not in tgt
+        finally:
+            _cleanup(path)
+
+    def test_returns_zero_when_nothing_matched(self):
+        repo, path = _tmp_repo({"global_policy": {"trusted": [], "target": ["10.0.0.0/24"], "excluded": []}})
+        try:
+            assert RemoveRuleUseCase(repo).execute("target", ["172.16.0.0/24"]) == 0
+        finally:
+            _cleanup(path)
+
 
 class TestListInterfacesUseCase:
 

@@ -152,3 +152,54 @@ class TestOpctlShellModes:
             assert result.startswith("execute")
         finally:
             _cleanup(path)
+
+
+class TestShellFirewallRules:
+
+    def test_no_removes_global_rule(self):
+        shell, path = _make_shell()
+        try:
+            shell.do_configure("")
+            shell.do_policy("")
+            shell.do_target("10.0.0.0/24")
+            assert "10.0.0.0/24" in shell.repo.load_state()["global_policy"]["target"]
+            shell.do_no("target 10.0.0.0/24")
+            assert "10.0.0.0/24" not in shell.repo.load_state()["global_policy"]["target"]
+        finally:
+            _cleanup(path)
+
+    def test_no_removes_interface_rule(self):
+        shell, path = _make_shell()
+        try:
+            shell.do_configure("")
+            shell.do_interface("eth0")
+            shell.do_excluded("10.0.0.0/8")
+            assert "10.0.0.0/8" in shell.repo.load_state()["interfaces"]["eth0"]["policy"]["excluded"]
+            shell.do_no("excluded 10.0.0.0/8")
+            assert "10.0.0.0/8" not in shell.repo.load_state()["interfaces"]["eth0"]["policy"]["excluded"]
+        finally:
+            _cleanup(path)
+
+    def test_no_without_args_warns(self, capsys):
+        shell, path = _make_shell()
+        try:
+            shell.do_configure("")
+            shell.do_policy("")
+            shell.do_no("")
+            assert "requires a zone" in capsys.readouterr().out
+        finally:
+            _cleanup(path)
+
+    def test_help_in_policy_mode_lists_firewall_commands(self, capsys):
+        # Regression: 'Firewall'-category commands previously crashed _print_help
+        # with KeyError in policy/interface modes.
+        shell, path = _make_shell()
+        try:
+            shell.do_configure("")
+            shell.do_policy("")
+            shell.do_help("")
+            out = capsys.readouterr().out
+            assert "Firewall" in out
+            assert "target" in out and "no" in out
+        finally:
+            _cleanup(path)

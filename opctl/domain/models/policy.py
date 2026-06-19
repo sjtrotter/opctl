@@ -4,20 +4,33 @@ from typing import Set, List, Dict, Union, Tuple, Callable, Iterable, AbstractSe
 NetworkObject = Union[ipaddress.IPv4Network, ipaddress.IPv6Network]
 
 class OpPolicy:
+    # Canonical firewall zones — the single source of truth for the domain.
+    ZONES = ("trusted", "target", "excluded")
+
     def __init__(self) -> None:
         self.raw_trusted: Set[str] = set()
         self.raw_targets: Set[str] = set()
         self.raw_excluded: Set[str] = set()
 
-    def add_rule(self, zone: str, rule: str) -> None:
-        if zone == "trusted": self.raw_trusted.add(rule)
-        elif zone == "target": self.raw_targets.add(rule)
-        elif zone == "excluded": self.raw_excluded.add(rule)
+    def _zone_set(self, zone: str):
+        return {
+            "trusted": self.raw_trusted,
+            "target": self.raw_targets,
+            "excluded": self.raw_excluded,
+        }.get(zone)
 
-    def remove_rule(self, zone: str, rule: str) -> None:
-        if zone == "trusted": self.raw_trusted.discard(rule)
-        elif zone == "target": self.raw_targets.discard(rule)
-        elif zone == "excluded": self.raw_excluded.discard(rule)
+    def add_rule(self, zone: str, rule: str) -> None:
+        bucket = self._zone_set(zone)
+        if bucket is not None:
+            bucket.add(rule)
+
+    def remove_rule(self, zone: str, rule: str) -> bool:
+        """Remove a rule from a zone; return True only if it was actually present."""
+        bucket = self._zone_set(zone)
+        if bucket is None or rule not in bucket:
+            return False
+        bucket.discard(rule)
+        return True
 
     def compile(self, parse_strategy: Callable[[str], Iterable[NetworkObject]]) -> Dict[str, Dict[str, List[str]]]:
         pure_trust, port_trust = self._split_ports(self.raw_trusted)

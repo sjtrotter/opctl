@@ -4,7 +4,7 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 from opctl.adapters.json_repository import JsonPolicyRepository
-from opctl.command_schema import handle_show, handle_write, handle_config
+from opctl.command_schema import handle_show, handle_write, handle_config, handle_remove
 
 
 def _tmp_repo(initial_state=None):
@@ -104,5 +104,80 @@ class TestHandleConfig:
                            "interface_name": "eth0", "interface_config": {"trusted": ["192.168.0.0/16"]}})
             out = capsys.readouterr().out
             assert "eth0" in out
+        finally:
+            _cleanup(path)
+
+
+class TestHandleRemove:
+
+    def test_removes_global_rule(self):
+        repo, path = _tmp_repo({"global_policy": {
+            "trusted": [], "target": ["10.0.0.0/24", "10.1.0.0/24"], "excluded": []}})
+        try:
+            handle_remove(repo, MagicMock(),
+                          {"_mode": "policy", "policy": {"no": ["target", "10.0.0.0/24"]}})
+            gp = repo.load_state()["global_policy"]
+            assert "10.0.0.0/24" not in gp["target"]
+            assert "10.1.0.0/24" in gp["target"]
+        finally:
+            _cleanup(path)
+
+    def test_removes_interface_rule(self):
+        state = {"interfaces": {"eth0": {"policy": {
+            "trusted": [], "target": [], "excluded": ["10.0.0.0/8"]}}}}
+        repo, path = _tmp_repo(state)
+        try:
+            handle_remove(repo, MagicMock(),
+                          {"_mode": "interface", "_interface": "eth0", "interface_name": "eth0",
+                           "interface_config": {"no": ["excluded", "10.0.0.0/8"]}})
+            pol = repo.load_state()["interfaces"]["eth0"]["policy"]
+            assert "10.0.0.0/8" not in pol["excluded"]
+        finally:
+            _cleanup(path)
+
+    def test_unknown_zone_is_rejected(self, capsys):
+        repo, path = _tmp_repo({})
+        try:
+            handle_remove(repo, MagicMock(), {"policy": {"no": ["bogus", "10.0.0.0/24"]}})
+            assert "Unknown zone" in capsys.readouterr().out
+        finally:
+            _cleanup(path)
+
+    def test_missing_network_prints_usage(self, capsys):
+        repo, path = _tmp_repo({})
+        try:
+            handle_remove(repo, MagicMock(), {"policy": {"no": ["target"]}})
+            assert "Usage" in capsys.readouterr().out
+        finally:
+            _cleanup(path)
+
+    def test_reports_actual_removed_count(self, capsys):
+        repo, path = _tmp_repo({"global_policy": {"trusted": [],
+                                "target": ["10.0.0.0/24", "10.1.0.0/24"], "excluded": []}})
+        try:
+            handle_remove(repo, MagicMock(), {"policy": {"no": ["target", "10.0.0.0/24", "10.1.0.0/24"]}})
+            assert "Removed 2 rule(s)" in capsys.readouterr().out
+        finally:
+            _cleanup(path)
+
+    def test_no_match_reports_nothing_removed_and_preserves_state(self, capsys):
+        repo, path = _tmp_repo({"global_policy": {"trusted": [], "target": ["10.0.0.0/24"], "excluded": []}})
+        try:
+            handle_remove(repo, MagicMock(), {"policy": {"no": ["target", "172.16.0.0/24"]}})
+            out = capsys.readouterr().out
+            assert "No matching" in out
+            assert "Removed" not in out
+            assert "10.0.0.0/24" in repo.load_state()["global_policy"]["target"]
+        finally:
+            _cleanup(path)
+
+    def test_unstaged_interface_does_not_claim_removal(self, capsys):
+        repo, path = _tmp_repo({})
+        try:
+            handle_remove(repo, MagicMock(),
+                          {"interface_name": "eth9", "interface_config": {"no": ["excluded", "10.0.0.0/8"]}})
+            out = capsys.readouterr().out
+            assert "Removed" not in out
+            assert "No matching" in out
         finally:
             _cleanup(path)

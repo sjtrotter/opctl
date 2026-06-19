@@ -29,7 +29,7 @@ class OpProfile:
         # 1. Hydrate Global Policy
         global_policy = OpPolicy()
         pol_data = data.get("global_policy", {})
-        for zone in ["trusted", "target", "excluded"]:
+        for zone in OpPolicy.ZONES:
             for rule in pol_data.get(zone, []):
                 global_policy.add_rule(zone, rule)
 
