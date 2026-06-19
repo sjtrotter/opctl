@@ -24,7 +24,7 @@ class InterfaceProfile:
     def from_dict(cls, data: dict) -> "InterfaceProfile":
         local_policy = OpPolicy()
         pol_data = data.get("policy", {})
-        for zone in ["trusted", "target", "excluded"]:
+        for zone in OpPolicy.ZONES:
             for rule in pol_data.get(zone, []):
                 local_policy.add_rule(zone, rule)
 

@@ -4,6 +4,8 @@ from .use_cases.commit_policy_uc import CommitPolicyUseCase
 from .use_cases.status_report_uc import StatusReportUseCase
 from .use_cases.list_interfaces_uc import ListInterfacesUseCase
 from .use_cases.transfer_config_uc import ExportConfigUseCase
+from .use_cases.remove_rule_uc import RemoveRuleUseCase
+from .domain.models.policy import OpPolicy
 
 # The master list of valid operational modes
 VALID_MODES = ["root", "configure", "system", "ntp", "policy", "interface"]
@@ -54,6 +56,28 @@ def handle_write(repo, os_adapter, payload):
     target = payload.get("value") or "session.json"
     ExportConfigUseCase(repo).execute(target)
     print(f"[*] Configuration saved to {target}")
+
+def handle_remove(repo, os_adapter, payload):
+    payload = payload or {}
+    iface = payload.get("interface_name")
+    cfg = payload.get("interface_config") if iface else payload.get("policy")
+    spec = (cfg or {}).get("no") or []
+    if not spec:
+        print("[!] Usage: no <zone> <network> [network ...]")
+        return
+    zone, rules = spec[0], spec[1:]
+    if zone not in OpPolicy.ZONES:
+        print(f"[!] Unknown zone '{zone}'. Choose: {', '.join(OpPolicy.ZONES)}.")
+        return
+    if not rules:
+        print(f"[!] Usage: no {zone} <network> [network ...]")
+        return
+    removed = RemoveRuleUseCase(repo).execute(zone, rules, interface=iface)
+    scope = f"interface {iface}" if iface else "global policy"
+    if removed:
+        print(f"[*] Removed {removed} rule(s) from {zone} ({scope}).")
+    else:
+        print(f"[!] No matching {zone} rule(s) to remove in {scope}.")
 
 def handle_config(repo, os_adapter, payload):
     BulkConfigureUseCase(repo).execute(payload)
@@ -254,6 +278,16 @@ COMMAND_SCHEMA = {
         "help": "Add excluded (deny) networks/hosts: overrides trusted/target",
         "flags": ["--excluded", "-x"],
         "handler": handle_config,
+        "valid_modes": ["policy", "interface"]
+    },
+    # Cisco-style removal. Shell-only: build_parser attaches only `setting` types as
+    # POSIX flags, so `negate` never gets a flag. Usage: no <zone> <network> [network...]
+    "no": {
+        "type": "negate",
+        "category": "Firewall",
+        "nargs": "+",
+        "help": "Remove a firewall rule: no <zone> <network> [network...]",
+        "handler": handle_remove,
         "valid_modes": ["policy", "interface"]
     }
 }

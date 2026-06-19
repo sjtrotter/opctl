@@ -78,7 +78,9 @@ class OpctlShell(cmd.Cmd):
 
     def _print_help(self):
         print(f"\n--- [ {self.prompt.strip()} Commands ] ---")
-        groups = {"Actions": [], "Navigation": [], "Settings": [], "Built-in": []}
+        # Seed common categories for a stable display order; setdefault() below
+        # tolerates any other category (e.g. "Firewall") without a KeyError.
+        groups = {cat: [] for cat in ("Actions", "Navigation", "Firewall", "Settings", "Built-in")}
         
         for name, cfg in COMMAND_SCHEMA.items():
             if self.current_mode not in cfg.get("valid_modes", []):
@@ -89,11 +91,12 @@ class OpctlShell(cmd.Cmd):
             usage = f"{name}{aliases}"
             
             if name == "interface": usage += " <name>"
+            elif name == "no": usage += " <zone> <network>"
             elif cfg.get("nargs") == "+": usage += " <val1> [val2...]"
             elif cfg.get("nargs") == 1: usage += " <value>"
             
             help_text = cfg.get("help", "")
-            groups[cat].append(f"  {usage:<30} {help_text}")
+            groups.setdefault(cat, []).append(f"  {usage:<30} {help_text}")
 
         for cat, lines in groups.items():
             if lines:
@@ -150,7 +153,19 @@ def _create_method(cmd_name, cfg):
                 
             handler(self.repo, self.os_adapter, payload)
             print(f"[*] Staged {cmd_name}.")
-            
+
+        elif cmd_type == "negate":
+            if not args:
+                print(f"Usage error: '{cmd_name}' requires a zone and network "
+                      f"(e.g. no target 10.0.0.0/24).")
+                return
+            if self.current_mode == "interface":
+                payload["interface_name"] = self.current_interface
+                payload["interface_config"] = {cmd_name: args}
+            else:
+                payload[self.current_mode] = {cmd_name: args}
+            handler(self.repo, self.os_adapter, payload)
+
     method.__doc__ = cfg.get("help", "")
     return method
 

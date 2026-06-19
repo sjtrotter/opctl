@@ -1,17 +1,16 @@
 from opctl.domain.models.profile import OpProfile
 from opctl.domain.models.interface import InterfaceProfile
+from opctl.domain.models.policy import OpPolicy
 from opctl.domain.interfaces import IPolicyRepository
 
 class BulkConfigureUseCase:
-    _POLICY_ZONES = ("trusted", "target", "excluded")
-
     def __init__(self, repo: IPolicyRepository):
         self.repo = repo
 
     @staticmethod
     def _stage_rules(policy, cfg: dict) -> None:
         """Append firewall rules from a config dict keyed by zone name."""
-        for zone in BulkConfigureUseCase._POLICY_ZONES:
+        for zone in OpPolicy.ZONES:
             if zone in cfg:
                 values = cfg[zone] if isinstance(cfg[zone], list) else [cfg[zone]]
                 for rule in values:
