@@ -59,7 +59,7 @@ def resolve_posix_payload(args) -> Dict[str, Any]:
     if command == "interface":
         payload["interface_name"] = str(arg_dict.get("iface_target", ""))
         payload["interface_config"] = settings_provided
-    elif command in ["system", "ntp", "policy"]:
+    elif command in ["system", "ntp", "policy", "backend"]:
         payload[command] = settings_provided
         
     return payload

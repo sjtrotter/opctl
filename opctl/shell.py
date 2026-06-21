@@ -48,7 +48,7 @@ class OpctlShell(cmd.Cmd):
         if cmd_name == "help":
             self._print_help()
         elif cmd_name == "exit":
-            if self.current_mode in ['system', 'ntp', 'policy', 'interface']:
+            if self.current_mode in ['system', 'ntp', 'policy', 'interface', 'backend']:
                 self.current_mode = 'configure'
                 self.current_interface = None
                 self.prompt = 'opctl(config)# '
@@ -80,7 +80,7 @@ class OpctlShell(cmd.Cmd):
         print(f"\n--- [ {self.prompt.strip()} Commands ] ---")
         # Seed common categories for a stable display order; setdefault() below
         # tolerates any other category (e.g. "Firewall") without a KeyError.
-        groups = {cat: [] for cat in ("Actions", "Navigation", "Firewall", "Settings", "Built-in")}
+        groups = {cat: [] for cat in ("Actions", "Navigation", "Firewall", "Backend", "Settings", "Built-in")}
         
         for name, cfg in COMMAND_SCHEMA.items():
             if self.current_mode not in cfg.get("valid_modes", []):
@@ -141,14 +141,16 @@ def _create_method(cmd_name, cfg):
                     return
                 val = args if cfg.get("nargs") == "+" else args[0]
                 choices = cfg.get("choices")
-                if choices and (val not in choices and (isinstance(val, list) and not all(v in choices for v in val))):
-                    print(f"Invalid choice. Valid options: {choices}")
-                    return
+                if choices:
+                    candidates = val if isinstance(val, list) else [val]
+                    if not all(c in choices for c in candidates):
+                        print(f"Invalid choice. Valid options: {choices}")
+                        return
             
             if self.current_mode == "interface":
                 payload["interface_name"] = self.current_interface
                 payload["interface_config"] = {cmd_name: val}
-            elif self.current_mode in ["system", "ntp", "policy"]:
+            elif self.current_mode in ["system", "ntp", "policy", "backend"]:
                 payload[self.current_mode] = {cmd_name: val}
                 
             handler(self.repo, self.os_adapter, payload)

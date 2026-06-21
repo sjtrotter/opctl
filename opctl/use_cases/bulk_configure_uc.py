@@ -35,6 +35,13 @@ class BulkConfigureUseCase:
             if "enable" in ntp_cfg: profile.ntp.enabled = True
             if "disable" in ntp_cfg: profile.ntp.enabled = False
 
+        # 2b. Backend provider selection (per-machine capability)
+        if "backend" in payload:
+            be_cfg = payload["backend"]
+            if "firewall_provider" in be_cfg: profile.backend.firewall_provider = be_cfg["firewall_provider"]
+            if "network_provider" in be_cfg: profile.backend.network_provider = be_cfg["network_provider"]
+            if "system_provider" in be_cfg: profile.backend.system_provider = be_cfg["system_provider"]
+
         # 3. Interface-Specific Config & Local Policy
         if "interface_name" in payload:
             iname = payload["interface_name"]
