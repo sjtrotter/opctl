@@ -126,8 +126,9 @@ pin explicitly):
 | network  | `nmcli` → `iproute2` → `ifconfig` | PowerShell → `netsh` |
 | firewall | `firewalld` → `ufw` → `iptables` | PowerShell → `netsh` |
 
-Pin a provider by setting the `backend` block in `session.json` (e.g.
-`"firewall_provider": "iptables"`); the default `"auto"` auto-detects.
+Pin a provider with the **`backend`** command — `opctl backend --firewall-provider iptables
+--network-provider iproute2`, or in the shell `configure` → `backend` → `firewall_provider iptables`
+(or edit the `backend` block in `session.json` directly). The default `"auto"` auto-detects.
 
 ## The `session.json` file
 

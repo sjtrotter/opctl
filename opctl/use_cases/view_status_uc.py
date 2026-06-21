@@ -69,6 +69,17 @@ class ViewStatusUseCase:
                     comparable=False, present=bool(profile.ntp.servers),
                 ),
             },
+            "Backend": {
+                "Firewall Provider": self._field(
+                    profile.backend.firewall_provider, "N/A",
+                    comparable=False, present=profile.backend.firewall_provider != "auto"),
+                "Network Provider": self._field(
+                    profile.backend.network_provider, "N/A",
+                    comparable=False, present=profile.backend.network_provider != "auto"),
+                "System Provider": self._field(
+                    profile.backend.system_provider, "N/A",
+                    comparable=False, present=profile.backend.system_provider != "auto"),
+            },
             "Global Policy": {},
             "Interfaces": {},
         }

@@ -115,6 +115,18 @@ class TestBulkConfigureUseCase:
         finally:
             _cleanup(path)
 
+    def test_stages_backend_providers_leaving_others_auto(self):
+        repo, path = _tmp_repo()
+        try:
+            BulkConfigureUseCase(repo).execute(
+                {"backend": {"firewall_provider": "iptables", "network_provider": "iproute2"}})
+            be = repo.load_state()["backend"]
+            assert be["firewall_provider"] == "iptables"
+            assert be["network_provider"] == "iproute2"
+            assert be["system_provider"] == "auto"  # unspecified field untouched
+        finally:
+            _cleanup(path)
+
     def test_preserves_existing_state(self):
         repo, path = _tmp_repo({"system": {"hostname": "original", "unmanaged_policy": "ignore"}})
         try:
@@ -439,6 +451,21 @@ class TestViewStatusUseCase:
         finally:
             _cleanup(path)
 
+    def test_backend_provider_shows_only_when_non_auto(self):
+        repo, path = _tmp_repo({"backend": {
+            "firewall_provider": "iptables", "network_provider": "auto", "system_provider": "auto"}})
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        net_m = MagicMock()
+        net_m.get_available_interfaces.return_value = []
+        net_m.get_dns_servers.return_value = []
+        try:
+            data = ViewStatusUseCase(repo, sys_m, net_m).execute()
+            assert data["Backend"]["Firewall Provider"]["state"] == "staged"
+            assert data["Backend"]["Network Provider"]["state"] == "unset"
+        finally:
+            _cleanup(path)
+
     def test_staged_only_firewall_is_not_synced(self):
         # Regression: firewall rules have no live equivalent and must report
         # 'staged', never a misleading 'synced'/SYNC.
@@ -514,5 +541,41 @@ class TestStatusReportUseCase:
             assert "Isolate" in out
             assert "10.0.0.0/24" in out
             assert "CHANGES" not in out  # nothing comparable is staged
+        finally:
+            _cleanup(path)
+
+    def test_backend_provider_rendered_under_staged(self):
+        repo, path = _tmp_repo({"backend": {
+            "firewall_provider": "iptables", "network_provider": "auto", "system_provider": "auto"}})
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        try:
+            out = "\n".join(StatusReportUseCase(repo, sys_m, self._net()).execute("root"))
+            assert "STAGED" in out
+            assert "backend" in out and "iptables" in out
+            assert "network provider" not in out  # auto providers are not shown
+        finally:
+            _cleanup(path)
+
+    def test_all_auto_backend_renders_no_backend_rows(self):
+        repo, path = _tmp_repo({"system": {"hostname": "recon-01"}})  # backend defaults to all-auto
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        try:
+            out = "\n".join(StatusReportUseCase(repo, sys_m, self._net()).execute("root"))
+            assert "recon-01" in out   # report is non-empty
+            assert "backend" not in out
+        finally:
+            _cleanup(path)
+
+    def test_backend_section_is_mode_scoped(self):
+        repo, path = _tmp_repo({"backend": {
+            "firewall_provider": "iptables", "network_provider": "auto", "system_provider": "auto"}})
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        try:
+            srv = StatusReportUseCase(repo, sys_m, self._net())
+            assert "iptables" in "\n".join(srv.execute("backend"))
+            assert "iptables" not in "\n".join(srv.execute("system"))
         finally:
             _cleanup(path)

@@ -102,6 +102,17 @@ class TestCliParser:
         assert args.iface_target == "eth0"
         assert args.excluded == ["192.168.0.0/16"]
 
+    def test_backend_provider_flags(self):
+        args = self.parser.parse_args(
+            ["backend", "--firewall-provider", "iptables", "--network-provider", "iproute2"])
+        assert args.command == "backend"
+        assert args.firewall_provider == "iptables"
+        assert args.network_provider == "iproute2"
+
+    def test_backend_provider_rejects_invalid_choice(self):
+        with pytest.raises(SystemExit):
+            self.parser.parse_args(["backend", "--firewall-provider", "bogus"])
+
 
 class TestResolvePosixPayload:
     """Translation from the argparse namespace into the standardized payload dict."""
@@ -149,3 +160,8 @@ class TestResolvePosixPayload:
         args = self.parser.parse_args(["interface", "eth0", "--excluded", "192.168.0.0/16"])
         payload = resolve_posix_payload(args)
         assert payload["interface_config"]["excluded"] == ["192.168.0.0/16"]
+
+    def test_backend_routes_to_backend_payload(self):
+        args = self.parser.parse_args(["backend", "--system-provider", "hostnamectl"])
+        payload = resolve_posix_payload(args)
+        assert payload["backend"]["system_provider"] == "hostnamectl"

@@ -203,3 +203,39 @@ class TestShellFirewallRules:
             assert "target" in out and "no" in out
         finally:
             _cleanup(path)
+
+
+class TestShellBackend:
+
+    def test_backend_mode_entry_and_prompt(self):
+        shell, path = _make_shell()
+        try:
+            shell.do_configure("")
+            shell.do_backend("")
+            assert shell.current_mode == "backend"
+            assert "config-backend" in shell.prompt
+        finally:
+            _cleanup(path)
+
+    def test_backend_stages_provider_then_exit_returns_to_configure(self):
+        shell, path = _make_shell()
+        try:
+            shell.do_configure("")
+            shell.do_backend("")
+            shell.do_firewall_provider("iptables")
+            assert shell.repo.load_state()["backend"]["firewall_provider"] == "iptables"
+            shell.do_exit("")
+            assert shell.current_mode == "configure"
+            assert shell.prompt == "opctl(config)# "
+        finally:
+            _cleanup(path)
+
+    def test_backend_rejects_invalid_provider_choice(self, capsys):
+        shell, path = _make_shell()
+        try:
+            shell.do_configure("")
+            shell.do_backend("")
+            shell.do_firewall_provider("bogus")
+            assert "Invalid choice" in capsys.readouterr().out
+        finally:
+            _cleanup(path)

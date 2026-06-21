@@ -8,7 +8,7 @@ from .use_cases.remove_rule_uc import RemoveRuleUseCase
 from .domain.models.policy import OpPolicy
 
 # The master list of valid operational modes
-VALID_MODES = ["root", "configure", "system", "ntp", "policy", "interface"]
+VALID_MODES = ["root", "configure", "system", "ntp", "policy", "interface", "backend"]
 
 # --- Handler Callbacks ---
 def handle_execute(repo, os_adapter, payload):
@@ -176,6 +176,12 @@ COMMAND_SCHEMA = {
         "aliases": ["int"],
         "valid_modes": ["configure"]
     },
+    "backend": {
+        "type": "nav",
+        "category": "Navigation",
+        "help": "Select OS provider backends (per-machine capability)",
+        "valid_modes": ["configure"]
+    },
 
     # === SETTINGS ===
     # Notice all settings share the handle_config callback
@@ -289,5 +295,34 @@ COMMAND_SCHEMA = {
         "help": "Remove a firewall rule: no <zone> <network> [network...]",
         "handler": handle_remove,
         "valid_modes": ["policy", "interface"]
+    },
+
+    # === BACKEND PROVIDER SELECTION (per-machine capability) ===
+    "firewall_provider": {
+        "type": "setting",
+        "category": "Backend",
+        "choices": ["auto", "iptables", "firewalld", "ufw", "powershell", "netsh"],
+        "help": "Select the firewall provider ('auto' to detect)",
+        "flags": ["--firewall-provider"],
+        "handler": handle_config,
+        "valid_modes": ["backend"]
+    },
+    "network_provider": {
+        "type": "setting",
+        "category": "Backend",
+        "choices": ["auto", "iproute2", "nmcli", "ifconfig", "powershell", "netsh"],
+        "help": "Select the network provider ('auto' to detect)",
+        "flags": ["--network-provider"],
+        "handler": handle_config,
+        "valid_modes": ["backend"]
+    },
+    "system_provider": {
+        "type": "setting",
+        "category": "Backend",
+        "choices": ["auto", "hostnamectl", "hostname", "powershell", "wmic"],
+        "help": "Select the system/hostname provider ('auto' to detect)",
+        "flags": ["--system-provider"],
+        "handler": handle_config,
+        "valid_modes": ["backend"]
     }
 }

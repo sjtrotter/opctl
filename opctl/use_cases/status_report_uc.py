@@ -90,6 +90,8 @@ class StatusReportUseCase:
             add("system", data["System"])
         if mode in ("root", "ntp", "configure"):
             add("ntp", data["NTP"])
+        if mode in ("root", "backend", "configure"):
+            add("backend", data["Backend"])
         if mode in ("root", "policy", "configure"):
             add("firewall", data["Global Policy"])
         if mode in ("root", "interface", "configure"):

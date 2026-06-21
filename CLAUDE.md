@@ -107,7 +107,8 @@ Front-ends:  POSIX CLI (cli.py + cli_parser.py)  ─┐
 
 The backends do not implement OS logic themselves — they compose **providers**, one per concern,
 each wrapping a specific OS CLI tool. `BackendConfig` (three fields, each defaulting to `"auto"`,
-read from `session.json`'s top-level `backend` block) drives selection via
+read from `session.json`'s top-level `backend` block, and staged via the `backend` command —
+`configure` → `backend`, or `opctl backend --firewall-provider …`) drives selection via
 `infrastructure/_resolve.py::resolve_provider`:
 
 - `"auto"` → the **first** candidate whose `is_available()` (a `shutil.which()` PATH check) is true;
