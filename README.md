@@ -34,6 +34,8 @@ are reconfiguring a host's network posture and want to see the full delta before
   compiled with real subnet algebra (exclusion + CIDR collapsing) for IPv4 and IPv6, with optional
   `IP:PORT` overrides.
 - **NTP** enable/disable.
+- **Unmanaged-interface policy** — NICs you don't explicitly configure can be left alone (`ignore`),
+  `isolate`d (deny-all egress), or `disable`d (brought down) at commit.
 - **Cross-platform** via auto-detected providers — it uses whatever network stack your host actually
   has (NetworkManager/iproute2/net-tools and firewalld/ufw/iptables on Linux; PowerShell/netsh/wmic
   on Windows).
@@ -194,9 +196,12 @@ back on failure. Still being wired up:
   enums, providers, firewall rules) — and fails loudly with a complete error list (see
   [`PLAYBOOK.md`](PLAYBOOK.md)). A richer mission-frontmatter format (targets/constraints/restraints)
   is still planned.
-- IPv6 firewalling is a no-op under the `iptables` provider specifically (use `firewalld`/`ufw` for
-  IPv6 blocking).
+- Firewall provider depth varies: IPv6 blocking is a no-op under `iptables` (use `ufw`), and the
+  `firewalld` provider has a known binding bug ([#33]) — pin `iptables`/`ufw` via `backend` for
+  reliable per-interface filtering and `unmanaged isolate`.
 - NTP currently stages enable/disable only; setting the server/pool list is in progress.
+
+[#33]: https://github.com/sjtrotter/opctl/issues/33
 
 ## License
 
