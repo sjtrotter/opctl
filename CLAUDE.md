@@ -75,7 +75,8 @@ Front-ends:  POSIX CLI (cli.py + cli_parser.py)  ─┐
 - **`opctl/domain/`** — Pure business logic, no imports from outer layers.
   - `models/` — `OpProfile` is the **aggregate root** (a plain class) and owns all JSON
     (de)serialization. It bundles `SystemProfile`, `NetworkProfile`, `NtpProfile`,
-    `Dict[str, InterfaceProfile]`, a global `OpPolicy`, and a `BackendConfig`. **Only
+    `Dict[str, InterfaceProfile]`, a global `OpPolicy`, a `BackendConfig`, and an optional
+    `MissionMeta` (`meta`, serialized only when present). **Only
     `InterfaceProfile` is a dataclass with `from_dict`**; the leaf profiles are dataclasses with
     `to_dict` only, and `OpProfile.from_dict` rebuilds them inline with `dict.get()` defaults (so
     adding a leaf-profile field means editing two places). `OpProfile`/`OpPolicy` are plain classes,
@@ -183,6 +184,13 @@ Note the shape: the **outer** key is the family (`"v4"`/`"v6"`); the inner keys 
   attribute is `raw_targets` and `OpPolicy.compile()` emits plural `targets`. Easy to mishandle.
 - **Keep the domain pure:** `OpPolicy.compile()` receives the parser as an argument; don't import
   `IPParser` into `domain/models/`.
+- **Validation lives in the domain.** `domain/services/validators.py` (hostname/MAC/IP/DNS/interface/
+  port) is pure and reused by both the OS providers and playbook import. Playbook import runs
+  `_validate_structure` (shapes) then `domain/services/playbook_validator.validate_playbook` (field
+  values, collecting every error). Valid provider names come from `BackendConfig.VALID_PROVIDERS`
+  (also the source of the `backend` command's choices). A playbook may carry an optional `meta` block
+  → `OpProfile.meta` (`MissionMeta`); it's emitted to `session.json` only when present and shown in
+  the `show` **Mission** section. See `PLAYBOOK.md`.
 - **`session.json` is per-CWD** and gitignored (transient, per-machine staged state).
 
 ### Known rough edges (verified, as of v0.1.0)
@@ -191,6 +199,3 @@ These are real and worth knowing when working in the code — they are not yet f
 
 - `IptablesProvider.apply_ipv6_blocks/allows` are `pass` (no-ops) — IPv6 firewalling is silently not
   applied under iptables (would need `ip6tables`). Tracked in #20.
-- Playbook **import validates structure, not field values** — top-level blocks must be objects and
-  policy zones must be lists (`ImportConfigUseCase._validate_structure`), then `OpProfile.from_dict`
-  normalizes. Field-level/semantic validation and a mission-frontmatter wrapper are deferred to #3.

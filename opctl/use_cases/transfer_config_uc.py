@@ -2,6 +2,7 @@ import json
 import os
 from opctl.domain.models import OpProfile
 from opctl.domain.models.policy import OpPolicy
+from opctl.domain.services.playbook_validator import validate_playbook
 from opctl.domain.interfaces import IPolicyRepository
 
 class ImportConfigUseCase:
@@ -25,9 +26,12 @@ class ImportConfigUseCase:
 
         self._validate_structure(imported_data)
 
-        # Structural validation above guarantees from_dict won't choke; it then
-        # normalizes the OpProfile shape and drops unknown keys. Field-level /
-        # semantic validation (valid CIDRs, provider names, …) is deferred to #3.
+        # Field-level / semantic validation — collect ALL problems and fail loudly.
+        errors = validate_playbook(imported_data)
+        if errors:
+            raise ValueError("invalid playbook:\n  - " + "\n  - ".join(errors))
+
+        # from_dict normalizes the (now validated) OpProfile shape and drops unknown keys.
         profile = OpProfile.from_dict(imported_data)
 
         # Replace the current active session

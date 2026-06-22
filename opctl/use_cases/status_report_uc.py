@@ -86,6 +86,8 @@ class StatusReportUseCase:
                     "state": info["state"],
                 })
 
+        if mode in ("root", "configure"):
+            add("mission", data["Mission"])
         if mode in ("root", "system", "configure"):
             add("system", data["System"])
         if mode in ("root", "ntp", "configure"):

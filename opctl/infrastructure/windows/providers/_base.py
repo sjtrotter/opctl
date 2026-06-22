@@ -1,5 +1,5 @@
 import subprocess
-from opctl.infrastructure.validators import (
+from opctl.domain.services.validators import (
     validate_hostname, validate_mac, validate_ip,
     validate_dns, validate_interface, validate_port,
 )

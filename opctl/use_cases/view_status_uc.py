@@ -42,6 +42,17 @@ class ViewStatusUseCase:
         live_dns = list(live_dns_set)
 
         report_data = {
+            "Mission": {
+                "Name": self._field(
+                    profile.meta.name if profile.meta else "", "N/A",
+                    comparable=False, present=bool(profile.meta and profile.meta.name)),
+                "Version": self._field(
+                    str(profile.meta.version) if profile.meta else "", "N/A",
+                    comparable=False, present=profile.meta is not None),
+                "Description": self._field(
+                    profile.meta.description if profile.meta else "", "N/A",
+                    comparable=False, present=bool(profile.meta and profile.meta.description)),
+            },
             "System": {
                 "Hostname": self._field(
                     profile.system.hostname or "N/A", live_hostname,
