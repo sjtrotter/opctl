@@ -196,12 +196,9 @@ back on failure. Still being wired up:
   enums, providers, firewall rules) — and fails loudly with a complete error list (see
   [`PLAYBOOK.md`](PLAYBOOK.md)). A richer mission-frontmatter format (targets/constraints/restraints)
   is still planned.
-- Firewall provider depth varies: IPv6 blocking is a no-op under `iptables` (use `ufw`), and the
-  `firewalld` provider has a known binding bug ([#33]) — pin `iptables`/`ufw` via `backend` for
-  reliable per-interface filtering and `unmanaged isolate`.
+- IPv6 firewalling is a no-op under the `iptables` provider specifically (use `firewalld`/`ufw` for
+  IPv6 blocking, or pin one via `backend`).
 - NTP currently stages enable/disable only; setting the server/pool list is in progress.
-
-[#33]: https://github.com/sjtrotter/opctl/issues/33
 
 ## License
 

@@ -268,41 +268,82 @@ class TestIptablesProvider:
 
 class TestFirewalldProvider:
 
-    def test_flush_deletes_then_recreates_zone(self):
+    def test_flush_removes_rules_when_chain_exists(self):
+        # default mock: --query-chain succeeds -> chain present -> flush the rules
         p = _mock_run(FirewalldProvider)
         p.flush_managed_rules()
         cmds = [c[0][0] for c in p._run.call_args_list]
-        assert any("--delete-zone=opctl" in c for c in cmds)
-        assert any("--new-zone=opctl" in c for c in cmds)
-        assert any("--reload" in c for c in cmds)
+        assert any("--remove-rules" in c and "OPCTL_OUT" in c and "ipv4" in c for c in cmds)
+        assert any("--remove-rules" in c and "OPCTL_OUT" in c and "ipv6" in c for c in cmds)
 
-    def test_apply_ipv4_blocks_adds_reject_rich_rule(self):
+    def test_flush_creates_chain_and_jump_when_absent(self):
+        p = _mock_run(FirewalldProvider)
+
+        def run(cmd):
+            if "--query-chain" in cmd:
+                raise RuntimeError("no chain")
+            return ""
+        p._run.side_effect = run
+        p.flush_managed_rules()
+        cmds = [c[0][0] for c in p._run.call_args_list]
+        assert any("--add-chain" in c and "OPCTL_OUT" in c for c in cmds)
+        assert any("--add-rule" in c and "OUTPUT" in c and "-j" in c and "OPCTL_OUT" in c for c in cmds)
+
+    def test_apply_ipv4_blocks_adds_reject_direct_rule(self):
         p = _mock_run(FirewalldProvider)
         p.apply_ipv4_blocks(["10.0.0.0/8"], [], None)
-        cmds = [" ".join(c[0][0]) for c in p._run.call_args_list]
-        rule_calls = [c for c in cmds if "--add-rich-rule" in c]
-        assert any("reject" in c for c in rule_calls)
-        assert any("10.0.0.0/8" in c for c in rule_calls)
+        cmd = p._run.call_args[0][0]
+        assert "--direct" in cmd and "--add-rule" in cmd and "ipv4" in cmd
+        assert "REJECT" in cmd and "-d" in cmd and "10.0.0.0/8" in cmd
 
-    def test_apply_ipv4_allows_adds_accept_rich_rule(self):
+    def test_apply_ipv4_allows_adds_accept(self):
         p = _mock_run(FirewalldProvider)
         p.apply_ipv4_allows(["192.168.1.0/24"], [], None)
-        cmds = [" ".join(c[0][0]) for c in p._run.call_args_list]
-        rule_calls = [c for c in cmds if "--add-rich-rule" in c]
-        assert any("accept" in c for c in rule_calls)
+        assert "ACCEPT" in p._run.call_args[0][0]
 
-    def test_apply_reloads_after_adding_rules(self):
+    def test_apply_with_interface_adds_output_flag(self):
         p = _mock_run(FirewalldProvider)
-        p.apply_ipv4_blocks(["10.0.0.0/8"], [], None)
-        last_cmd = p._run.call_args_list[-1][0][0]
-        assert last_cmd == ["firewall-cmd", "--reload"]
+        p.apply_ipv4_blocks(["10.0.0.0/8"], [], "eth0")
+        cmd = p._run.call_args[0][0]
+        assert "-o" in cmd and "eth0" in cmd
 
-    def test_apply_ipv6_uses_ipv6_family(self):
+    def test_apply_ipv6_blocks_uses_ipv6_family(self):
         p = _mock_run(FirewalldProvider)
         p.apply_ipv6_blocks(["2001:db8::/32"], [], None)
-        cmds = [" ".join(c[0][0]) for c in p._run.call_args_list]
-        rule_calls = [c for c in cmds if "--add-rich-rule" in c]
-        assert any("ipv6" in c for c in rule_calls)
+        cmd = p._run.call_args[0][0]
+        assert "ipv6" in cmd and "2001:db8::/32" in cmd and "REJECT" in cmd
+
+    def test_apply_port_rules_generate_tcp_and_udp(self):
+        p = _mock_run(FirewalldProvider)
+        p.apply_ipv4_blocks([], ["1.2.3.4:443"], None)
+        cmds = [c[0][0] for c in p._run.call_args_list]
+        assert any("tcp" in c for c in cmds)
+        assert any("udp" in c for c in cmds)
+        assert any("443" in c for c in cmds)
+
+    def test_blocks_get_lower_priority_than_later_allows(self):
+        # firewalld equal-priority rules have undefined order; REJECT must stay above
+        # later ACCEPTs (mirrors iptables -A insertion order).
+        p = _mock_run(FirewalldProvider)
+        p.flush_managed_rules()                            # resets the counter
+        p.apply_ipv4_blocks(["10.0.0.0/8"], [], None)      # REJECT
+        p.apply_ipv4_allows(["10.0.0.0/24"], [], None)     # ACCEPT, added later
+
+        rules = [c[0][0] for c in p._run.call_args_list
+                 if "--add-rule" in c[0][0] and "OPCTL_OUT" in c[0][0]]
+
+        def priority_of(target):
+            cmd = next(c for c in rules if target in c)
+            return int(cmd[cmd.index("OPCTL_OUT") + 1])
+        assert priority_of("REJECT") < priority_of("ACCEPT")
+
+    def test_ipv6_port_rule_strips_brackets_and_expands_protocols(self):
+        p = _mock_run(FirewalldProvider)
+        p.apply_ipv6_blocks([], ["[2001:db8::1]:443"], None)
+        joined = [" ".join(c[0][0]) for c in p._run.call_args_list]
+        assert any("2001:db8::1" in c and "[2001" not in c for c in joined)
+        assert any("ipv6" in c and "tcp" in c and "443" in c for c in joined)
+        assert any("udp" in c for c in joined)
 
     def test_provider_name(self):
         assert FirewalldProvider.provider_name() == "firewalld"

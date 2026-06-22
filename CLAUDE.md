@@ -201,9 +201,8 @@ Note the shape: the **outer** key is the family (`"v4"`/`"v6"`); the inner keys 
 These are real and worth knowing when working in the code — they are not yet fixed:
 
 - `IptablesProvider.apply_ipv6_blocks/allows` are `pass` (no-ops) — IPv6 firewalling is silently not
-  applied under iptables (would need `ip6tables`). Tracked in #20.
-- **The `firewalld` provider may not filter at all**: `flush_managed_rules` creates an `opctl` zone
-  but never binds an interface to it, `_add_rich_rule` ignores the `interface` arg and matches
-  `source` (not `destination`/egress). So global/per-interface/`isolate` rules may be inert or
-  mis-scoped under firewalld. `iptables`/`ufw` honor `-o interface` + egress correctly; `unmanaged
-  isolate` therefore works on those two, not firewalld. Tracked in #33.
+  applied under iptables (would need `ip6tables`). Tracked in #20. (`firewalld`/`ufw` do IPv6.)
+
+The `firewalld` provider drives netfilter via `firewall-cmd --direct` with a managed `OPCTL_OUT`
+chain (mirroring `iptables`), so it honors `-o interface` egress and IPv6, and assigns each rule a
+monotonically increasing priority to preserve REJECT-before-ACCEPT order.
