@@ -210,20 +210,33 @@ class TestNmcliProvider:
 # Firewall providers — iptables
 # ---------------------------------------------------------------------------
 
+_IPT = "opctl.infrastructure.linux.providers.firewall.iptables.shutil.which"
+
+
 class TestIptablesProvider:
 
     def test_flush_flushes_chain(self):
         p = _mock_run(IptablesProvider)
-        p.flush_managed_rules()
+        with patch(_IPT, return_value=None):  # no ip6tables -> v4 only
+            p.flush_managed_rules()
         p._run.assert_called_once_with(["iptables", "-F", "OPCTL_OUT"])
 
     def test_flush_creates_chain_on_error(self):
         p = _mock_run(IptablesProvider)
         p._run.side_effect = [RuntimeError("no chain"), None, None]
-        p.flush_managed_rules()
+        with patch(_IPT, return_value=None):
+            p.flush_managed_rules()
         calls = [c[0][0] for c in p._run.call_args_list]
         assert ["iptables", "-N", "OPCTL_OUT"] in calls
         assert ["iptables", "-I", "OUTPUT", "1", "-j", "OPCTL_OUT"] in calls
+
+    def test_flush_includes_ip6tables_when_present(self):
+        p = _mock_run(IptablesProvider)
+        with patch(_IPT, return_value="/usr/sbin/ip6tables"):
+            p.flush_managed_rules()
+        calls = [c[0][0] for c in p._run.call_args_list]
+        assert ["iptables", "-F", "OPCTL_OUT"] in calls
+        assert ["ip6tables", "-F", "OPCTL_OUT"] in calls
 
     def test_apply_ipv4_blocks_adds_reject_rule(self):
         p = _mock_run(IptablesProvider)
@@ -253,9 +266,26 @@ class TestIptablesProvider:
         assert any("udp" in c for c in cmds)
         assert any("443" in c for c in cmds)
 
-    def test_apply_ipv6_is_noop(self):
+    def test_apply_ipv6_blocks_uses_ip6tables(self):
         p = _mock_run(IptablesProvider)
-        p.apply_ipv6_blocks(["2001:db8::/32"], [], None)
+        with patch(_IPT, return_value="/usr/sbin/ip6tables"):
+            p.apply_ipv6_blocks(["2001:db8::/32"], [], "eth0")
+        cmd = p._run.call_args[0][0]
+        assert cmd[0] == "ip6tables"
+        assert "REJECT" in cmd and "2001:db8::/32" in cmd
+        assert "-o" in cmd and "eth0" in cmd
+
+    def test_apply_ipv6_allows_uses_ip6tables(self):
+        p = _mock_run(IptablesProvider)
+        with patch(_IPT, return_value="/usr/sbin/ip6tables"):
+            p.apply_ipv6_allows(["2001:db8::/32"], [], None)
+        cmd = p._run.call_args[0][0]
+        assert cmd[0] == "ip6tables" and "ACCEPT" in cmd
+
+    def test_apply_ipv6_skipped_when_ip6tables_absent(self):
+        p = _mock_run(IptablesProvider)
+        with patch(_IPT, return_value=None):
+            p.apply_ipv6_blocks(["2001:db8::/32"], [], None)
         p._run.assert_not_called()
 
     def test_provider_name(self):
