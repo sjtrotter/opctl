@@ -125,6 +125,15 @@ class TestBulkConfigureUseCase:
             assert be["firewall_provider"] == "iptables"
             assert be["network_provider"] == "iproute2"
             assert be["system_provider"] == "auto"  # unspecified field untouched
+            assert be["ntp_provider"] == "auto"
+        finally:
+            _cleanup(path)
+
+    def test_stages_backend_ntp_provider(self):
+        repo, path = _tmp_repo()
+        try:
+            BulkConfigureUseCase(repo).execute({"backend": {"ntp_provider": "chrony"}})
+            assert repo.load_state()["backend"]["ntp_provider"] == "chrony"
         finally:
             _cleanup(path)
 
@@ -291,6 +300,28 @@ class TestCommitPolicyUseCase:
             assert report.success is False
             assert any(s.status == "failed" for s in report.steps)
             assert any(s.status == "skipped" for s in report.steps)
+        finally:
+            _cleanup(path)
+
+    def test_ntp_applied_when_servers_staged(self):
+        state = {"ntp": {"enabled": True, "servers": ["0.pool.ntp.org"]}}
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        ntp_m = MagicMock()
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m, ntp_m).execute()
+            ntp_m.set_servers.assert_called_once_with(["0.pool.ntp.org"], True)
+            assert report.success is True
+        finally:
+            _cleanup(path)
+
+    def test_ntp_skipped_when_nothing_staged(self):
+        repo, path = _tmp_repo({"system": {"hostname": "x"}})
+        sys_m, net_m, fw_m = self._make_adapters()
+        ntp_m = MagicMock()
+        try:
+            CommitPolicyUseCase(repo, sys_m, net_m, fw_m, ntp_m).execute()
+            ntp_m.set_servers.assert_not_called()
         finally:
             _cleanup(path)
 

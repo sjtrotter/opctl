@@ -9,7 +9,7 @@ def _make_backend(sys_p=None, net_p=None, fw_p=None):
     fw_p = fw_p or MagicMock()
 
     with patch("opctl.infrastructure.linux.backend.resolve_provider",
-               side_effect=[sys_p, net_p, fw_p]):
+               side_effect=[sys_p, net_p, fw_p, MagicMock()]):  # 4th = ntp (unused here)
         backend = LinuxBackend(BackendConfig())
 
     return backend, sys_p, net_p, fw_p
@@ -71,3 +71,11 @@ class TestLinuxBackendDelegation:
         backend, _, net_p, _ = _make_backend()
         backend.set_link_state("eth0", "up")
         net_p.set_link_state.assert_called_once_with("eth0", "up")
+
+    def test_set_servers_delegates_to_ntp_provider(self):
+        ntp_p = MagicMock()
+        with patch("opctl.infrastructure.linux.backend.resolve_provider",
+                   side_effect=[MagicMock(), MagicMock(), MagicMock(), ntp_p]):
+            backend = LinuxBackend(BackendConfig())
+        backend.set_servers(["0.pool.ntp.org"], True)
+        ntp_p.set_servers.assert_called_once_with(["0.pool.ntp.org"], True)

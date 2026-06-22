@@ -12,15 +12,18 @@ class BackendConfig:
         "firewall": ("auto", "iptables", "firewalld", "ufw", "powershell", "netsh"),
         "network": ("auto", "iproute2", "nmcli", "ifconfig", "powershell", "netsh"),
         "system": ("auto", "hostnamectl", "hostname", "powershell", "wmic"),
+        "ntp": ("auto", "timesyncd", "chrony", "w32tm"),
     }
 
     firewall_provider: str = "auto"
     network_provider: str = "auto"
     system_provider: str = "auto"
+    ntp_provider: str = "auto"
 
     def to_dict(self) -> dict:
         return {
             "firewall_provider": self.firewall_provider,
             "network_provider": self.network_provider,
             "system_provider": self.system_provider,
+            "ntp_provider": self.ntp_provider,
         }

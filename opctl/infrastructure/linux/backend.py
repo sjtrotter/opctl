@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from opctl.domain.interfaces import ISystemAdapter, INetworkAdapter, IFirewallAdapter
+from opctl.domain.interfaces import ISystemAdapter, INetworkAdapter, IFirewallAdapter, INtpAdapter
 from opctl.domain.models.backend import BackendConfig
 from opctl.infrastructure._resolve import resolve_provider
 
@@ -12,19 +12,25 @@ from .providers.network.ifconfig import IfconfigProvider
 from .providers.firewall.firewalld import FirewalldProvider
 from .providers.firewall.ufw import UfwProvider
 from .providers.firewall.iptables import IptablesProvider
+from .providers.ntp.timesyncd import TimesyncdProvider
+from .providers.ntp.chrony import ChronyProvider
 
 _SYSTEM_PROVIDERS = [HostnamectlProvider, HostnameProvider]
 _NETWORK_PROVIDERS = [NmcliProvider, Iproute2Provider, IfconfigProvider]
 _FIREWALL_PROVIDERS = [FirewalldProvider, UfwProvider, IptablesProvider]
+# timesyncd/chrony have mutually-exclusive is_available() (chrony wins when chronyc
+# is present); ntpd is intentionally not auto-selected (shared-config rewrite risk).
+_NTP_PROVIDERS = [TimesyncdProvider, ChronyProvider]
 
 
-class LinuxBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter):
+class LinuxBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter, INtpAdapter):
 
     def __init__(self, config: Optional[BackendConfig] = None):
         cfg = config or BackendConfig()
         self._system: ISystemAdapter = resolve_provider(cfg.system_provider, _SYSTEM_PROVIDERS)
         self._network: INetworkAdapter = resolve_provider(cfg.network_provider, _NETWORK_PROVIDERS)
         self._firewall: IFirewallAdapter = resolve_provider(cfg.firewall_provider, _FIREWALL_PROVIDERS)
+        self._ntp: INtpAdapter = resolve_provider(cfg.ntp_provider, _NTP_PROVIDERS)
 
     # --- ISystemAdapter ---
     def set_hostname(self, hostname: str) -> None:
@@ -84,3 +90,10 @@ class LinuxBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter):
     def apply_ipv6_allows(self, cidrs: List[str], port_overrides: List[str],
                           interface: Optional[str] = None) -> None:
         self._firewall.apply_ipv6_allows(cidrs, port_overrides, interface)
+
+    # --- INtpAdapter ---
+    def set_servers(self, servers: List[str], enabled: bool) -> None:
+        self._ntp.set_servers(servers, enabled)
+
+    def get_servers(self) -> List[str]:
+        return self._ntp.get_servers()

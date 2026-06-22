@@ -10,7 +10,7 @@ def _make_backend(sys_p=None, net_p=None, fw_p=None):
     fw_p = fw_p or MagicMock()
 
     with patch("opctl.infrastructure.windows.backend.resolve_provider",
-               side_effect=[sys_p, net_p, fw_p]):
+               side_effect=[sys_p, net_p, fw_p, MagicMock()]):  # 4th = ntp (unused here)
         backend = WindowsBackend(BackendConfig())
 
     return backend, sys_p, net_p, fw_p
@@ -67,3 +67,11 @@ class TestWindowsBackendDelegation:
         backend, _, net_p, _ = _make_backend()
         backend.flush_managed_rules()
         assert not hasattr(net_p, "flush_managed_rules") or not net_p.flush_managed_rules.called
+
+    def test_set_servers_delegates_to_ntp_provider(self):
+        ntp_p = MagicMock()
+        with patch("opctl.infrastructure.windows.backend.resolve_provider",
+                   side_effect=[MagicMock(), MagicMock(), MagicMock(), ntp_p]):
+            backend = WindowsBackend(BackendConfig())
+        backend.set_servers(["time.windows.com"], True)
+        ntp_p.set_servers.assert_called_once_with(["time.windows.com"], True)

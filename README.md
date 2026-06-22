@@ -33,7 +33,7 @@ are reconfiguring a host's network posture and want to see the full delta before
 - **Zone-based egress firewall** — `trusted` / `target` (allow) and `excluded` (deny, overrides),
   compiled with real subnet algebra (exclusion + CIDR collapsing) for IPv4 and IPv6, with optional
   `IP:PORT` overrides.
-- **NTP** enable/disable.
+- **NTP** — enable/disable and set the server/pool list (applied via the host's time daemon).
 - **Unmanaged-interface policy** — NICs you don't explicitly configure can be left alone (`ignore`),
   `isolate`d (deny-all egress), or `disable`d (brought down) at commit.
 - **Cross-platform** via auto-detected providers — it uses whatever network stack your host actually
@@ -187,16 +187,17 @@ There is no build/compile step. Adding a command or flag is a single edit to
 
 opctl is at **v0.1.0** and under active development. Working today across both the **interactive
 shell** and the **one-shot POSIX CLI**: hostname, per-interface MAC/IP/mode/DNS/up-down, NTP
-enable/disable, firewall zone rules (`trusted`/`target`/`excluded`, global and per-interface), and
-provider selection (`backend`); export/import of playbooks (`write` / `import`); staged-vs-live
-diffing (`show`); and a transactional `execute` that commits to Linux and Windows hosts and rolls
-back on failure. Still being wired up:
+(enable/disable + server list), firewall zone rules (`trusted`/`target`/`excluded`, global and
+per-interface), and provider selection (`backend`); export/import of playbooks (`write` / `import`);
+staged-vs-live diffing (`show`); and a transactional `execute` that commits to Linux and Windows
+hosts and rolls back on failure.
 
 - Playbook **import is fully validated** — structure *and* field values (hostnames, IPs/CIDRs, MACs,
   enums, providers, firewall rules) — and fails loudly with a complete error list (see
   [`PLAYBOOK.md`](PLAYBOOK.md)). A richer mission-frontmatter format (targets/constraints/restraints)
   is still planned.
-- NTP currently stages enable/disable only; setting the server/pool list is in progress.
+- NTP applies via the host's daemon (`timesyncd`/`chrony` on Linux, `w32tm` on Windows); `ntpd` is
+  not auto-selected. On a mixed-daemon host, pin `ntp_provider` via `backend`.
 
 ## License
 

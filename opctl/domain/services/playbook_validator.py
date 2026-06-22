@@ -10,6 +10,7 @@ from typing import List
 
 from opctl.domain.services.validators import (
     validate_hostname, validate_mac, validate_ip, validate_dns, validate_interface,
+    validate_ntp_server,
 )
 from opctl.domain.services.ip_parser import IPParser
 from opctl.domain.models.policy import OpPolicy
@@ -53,7 +54,8 @@ def validate_playbook(data: dict) -> List[str]:
     backend = data.get("backend", {})
     for field, concern in (("firewall_provider", "firewall"),
                            ("network_provider", "network"),
-                           ("system_provider", "system")):
+                           ("system_provider", "system"),
+                           ("ntp_provider", "ntp")):
         if field in backend and backend[field] not in BackendConfig.VALID_PROVIDERS[concern]:
             errors.append(
                 f"backend.{field} must be one of {list(BackendConfig.VALID_PROVIDERS[concern])}")
@@ -116,15 +118,8 @@ def _validate_rule(rule: str) -> None:
 
 
 def _is_host_or_ip(value: str) -> bool:
-    if not isinstance(value, str) or not value:
-        return False
     try:
-        validate_ip(value)
-        return True
-    except ValueError:
-        pass
-    try:
-        validate_hostname(value)
+        validate_ntp_server(value)
         return True
     except ValueError:
         return False

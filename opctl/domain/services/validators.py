@@ -2,9 +2,12 @@ import re
 import ipaddress
 
 
-_HOSTNAME_LABEL = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$')
-_MAC_RE = re.compile(r'^([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}$')
-_SAFE_IFACE_RE = re.compile(r'^[a-zA-Z0-9_\-\.\ ]{1,64}$')
+# NOTE: anchor with \A...\Z, NOT ^...$ — in Python `$` also matches just before a
+# trailing newline, so `^...$` would accept e.g. "host\n", letting a newline through
+# into shell=True command strings (an injection vector).
+_HOSTNAME_LABEL = re.compile(r'\A[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\Z')
+_MAC_RE = re.compile(r'\A([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}\Z')
+_SAFE_IFACE_RE = re.compile(r'\A[a-zA-Z0-9_\-\.\ ]{1,64}\Z')
 
 
 def validate_hostname(hostname: str) -> str:
@@ -57,6 +60,17 @@ def validate_interface(name: str) -> str:
             "alphanumeric, hyphens, underscores, dots, or spaces only"
         )
     return name
+
+
+def validate_ntp_server(server: str) -> str:
+    """An NTP server is a bare IP address or a DNS hostname (not a CIDR)."""
+    if not isinstance(server, str) or not server:
+        raise ValueError(f"Invalid NTP server: {server!r}")
+    try:
+        ipaddress.ip_address(server)   # bare IPv4/IPv6, not a network/CIDR
+        return server
+    except ValueError:
+        return validate_hostname(server)
 
 
 def validate_port(port) -> int:

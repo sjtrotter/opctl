@@ -72,6 +72,7 @@ def main():
         firewall_provider=be_data.get("firewall_provider", "auto"),
         network_provider=be_data.get("network_provider", "auto"),
         system_provider=be_data.get("system_provider", "auto"),
+        ntp_provider=be_data.get("ntp_provider", "auto"),
     )
     try:
         os_adapter = get_os_interface(backend_config)

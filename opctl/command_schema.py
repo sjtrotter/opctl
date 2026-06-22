@@ -14,7 +14,7 @@ VALID_MODES = ["root", "configure", "system", "ntp", "policy", "interface", "bac
 # --- Handler Callbacks ---
 def handle_execute(repo, os_adapter, payload):
     print("[*] Engaging Radio Silence... Committing to hardware.")
-    report = CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter).execute()
+    report = CommitPolicyUseCase(repo, os_adapter, os_adapter, os_adapter, os_adapter).execute()
 
     marks = {"ok": "[ ok ]", "failed": "[FAIL]", "skipped": "[skip]"}
     for step in report.steps:
@@ -277,6 +277,16 @@ COMMAND_SCHEMA = {
         "handler": handle_config,
         "valid_modes": ["interface", "ntp"]
     },
+    "servers": {
+        "type": "setting",
+        "category": "Settings",
+        "nargs": "+",
+        "help": "Set NTP servers (hostnames or IPs)",
+        "flags": ["--servers", "-s"],
+        "aliases": ["server"],
+        "handler": handle_config,
+        "valid_modes": ["ntp"]
+    },
 
     # === FIREWALL ZONE RULES ===
     # Valid in 'policy' (global) and 'interface' (per-NIC) modes. The command name
@@ -344,6 +354,15 @@ COMMAND_SCHEMA = {
         "choices": list(BackendConfig.VALID_PROVIDERS["system"]),
         "help": "Select the system/hostname provider ('auto' to detect)",
         "flags": ["--system-provider"],
+        "handler": handle_config,
+        "valid_modes": ["backend"]
+    },
+    "ntp_provider": {
+        "type": "setting",
+        "category": "Backend",
+        "choices": list(BackendConfig.VALID_PROVIDERS["ntp"]),
+        "help": "Select the NTP provider ('auto' to detect)",
+        "flags": ["--ntp-provider"],
         "handler": handle_config,
         "valid_modes": ["backend"]
     }

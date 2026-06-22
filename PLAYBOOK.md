@@ -111,6 +111,7 @@ Per-machine capability (which OS tool drives each concern); `auto` auto-detects.
 | `firewall_provider` | `auto`, `iptables`, `firewalld`, `ufw`, `powershell`, `netsh` |
 | `network_provider` | `auto`, `iproute2`, `nmcli`, `ifconfig`, `powershell`, `netsh` |
 | `system_provider` | `auto`, `hostnamectl`, `hostname`, `powershell`, `wmic` |
+| `ntp_provider` | `auto`, `timesyncd`, `chrony`, `w32tm` |
 
 ## Validation
 
