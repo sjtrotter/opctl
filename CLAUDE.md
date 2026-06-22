@@ -196,13 +196,13 @@ Note the shape: the **outer** key is the family (`"v4"`/`"v6"`); the inner keys 
   the `show` **Mission** section. See `PLAYBOOK.md`.
 - **`session.json` is per-CWD** and gitignored (transient, per-machine staged state).
 
-### Known rough edges (verified, as of v0.1.0)
+### Firewall provider notes
 
-These are real and worth knowing when working in the code — they are not yet fixed:
+All three Linux firewall providers apply managed rules to a dedicated `OPCTL_OUT` chain off `OUTPUT`,
+with per-NIC egress (`-o <iface> -d <cidr>`), REJECT-before-ACCEPT ordering, and IPv4 + IPv6:
 
-- `IptablesProvider.apply_ipv6_blocks/allows` are `pass` (no-ops) — IPv6 firewalling is silently not
-  applied under iptables (would need `ip6tables`). Tracked in #20. (`firewalld`/`ufw` do IPv6.)
-
-The `firewalld` provider drives netfilter via `firewall-cmd --direct` with a managed `OPCTL_OUT`
-chain (mirroring `iptables`), so it honors `-o interface` egress and IPv6, and assigns each rule a
-monotonically increasing priority to preserve REJECT-before-ACCEPT order.
+- **`iptables`** uses `iptables`/`ip6tables` (IPv6 skipped gracefully if `ip6tables` is absent).
+- **`firewalld`** drives the same chain via `firewall-cmd --direct`, assigning each rule a
+  monotonically increasing priority to preserve insertion order (equal-priority direct rules are
+  otherwise unordered).
+- **`ufw`** applies `out on <iface> to <cidr>` rules tagged with an `opctl` comment.
