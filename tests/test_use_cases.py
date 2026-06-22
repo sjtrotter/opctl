@@ -11,6 +11,7 @@ from opctl.use_cases.list_interfaces_uc import ListInterfacesUseCase
 from opctl.use_cases.remove_rule_uc import RemoveRuleUseCase
 from opctl.use_cases.view_status_uc import ViewStatusUseCase
 from opctl.use_cases.status_report_uc import StatusReportUseCase
+from opctl.use_cases.transfer_config_uc import ImportConfigUseCase, ExportConfigUseCase
 
 
 def _tmp_repo(initial_state=None):
@@ -579,3 +580,146 @@ class TestStatusReportUseCase:
             assert "iptables" not in "\n".join(srv.execute("system"))
         finally:
             _cleanup(path)
+
+
+class TestTransferConfig:
+
+    def test_import_hydrates_full_profile(self):
+        # Regression for the OpProfile(data) bug: import must preserve interfaces,
+        # policy, system, and backend — not silently drop them.
+        playbook = {
+            "system": {"hostname": "recon-01", "unmanaged_policy": "isolate"},
+            "interfaces": {"eth0": {"mode": "static", "ip_addresses": ["10.10.0.5/24"],
+                                    "gateway": "", "dns_servers": [], "enabled": True,
+                                    "policy": {"trusted": [], "target": ["1.2.3.0/24"], "excluded": []}}},
+            "global_policy": {"trusted": [], "target": ["192.168.50.0/24"], "excluded": []},
+            "backend": {"firewall_provider": "iptables", "network_provider": "auto", "system_provider": "auto"},
+        }
+        pb_fd, pb_path = tempfile.mkstemp(suffix=".json")
+        os.close(pb_fd)
+        with open(pb_path, "w") as f:
+            json.dump(playbook, f)
+        repo, path = _tmp_repo({})
+        try:
+            ImportConfigUseCase(repo).execute(pb_path)
+            state = repo.load_state()
+            assert state["system"]["hostname"] == "recon-01"
+            assert state["interfaces"]["eth0"]["ip_addresses"] == ["10.10.0.5/24"]
+            assert "1.2.3.0/24" in state["interfaces"]["eth0"]["policy"]["target"]
+            assert "192.168.50.0/24" in state["global_policy"]["target"]
+            assert state["backend"]["firewall_provider"] == "iptables"
+        finally:
+            _cleanup(path)
+            _cleanup(pb_path)
+
+    def test_export_then_import_round_trips(self):
+        src_repo, src_path = _tmp_repo({})
+        BulkConfigureUseCase(src_repo).execute({"system": {"hostname": "ops"}})
+        BulkConfigureUseCase(src_repo).execute({"policy": {"excluded": ["10.0.0.0/8"]}})
+        pb_fd, pb_path = tempfile.mkstemp(suffix=".json")
+        os.close(pb_fd)
+        dst_repo, dst_path = _tmp_repo({})
+        try:
+            ExportConfigUseCase(src_repo).execute(pb_path)
+            ImportConfigUseCase(dst_repo).execute(pb_path)
+            assert dst_repo.load_state() == src_repo.load_state()
+        finally:
+            _cleanup(src_path)
+            _cleanup(dst_path)
+            _cleanup(pb_path)
+
+    def test_import_replaces_existing_staged_state(self):
+        # Headline behavior: import REPLACES, it does not merge.
+        existing = {
+            "system": {"hostname": "OLD"},
+            "interfaces": {"eth9": {"mode": "static", "ip_addresses": ["1.1.1.1/32"],
+                                    "gateway": "", "dns_servers": [], "enabled": True,
+                                    "policy": {"trusted": [], "target": [], "excluded": []}}},
+            "global_policy": {"trusted": ["172.16.0.0/12"], "target": [], "excluded": []},
+        }
+        repo, path = _tmp_repo(existing)
+        pb_fd, pb_path = tempfile.mkstemp(suffix=".json")
+        os.close(pb_fd)
+        with open(pb_path, "w") as f:
+            json.dump({"system": {"hostname": "NEW"}}, f)
+        try:
+            ImportConfigUseCase(repo).execute(pb_path)
+            state = repo.load_state()
+            assert state["system"]["hostname"] == "NEW"
+            assert state["interfaces"] == {}                # eth9 dropped
+            assert state["global_policy"]["trusted"] == []  # prior rule dropped
+        finally:
+            _cleanup(path)
+            _cleanup(pb_path)
+
+    def test_import_rejects_malformed_structure(self):
+        # Wrong-typed substructures must fail with ValueError, never crash or
+        # silently corrupt (e.g. a string zone shredded into per-character rules).
+        for bad in ({"interfaces": "x"}, {"interfaces": {"eth0": "x"}},
+                    {"global_policy": "x"}, {"global_policy": {"trusted": "abc"}},
+                    {"system": "x"}):
+            bad_fd, bad_path = tempfile.mkstemp(suffix=".json")
+            os.close(bad_fd)
+            with open(bad_path, "w") as f:
+                json.dump(bad, f)
+            repo, path = _tmp_repo({})
+            try:
+                with pytest.raises(ValueError):
+                    ImportConfigUseCase(repo).execute(bad_path)
+            finally:
+                _cleanup(path)
+                _cleanup(bad_path)
+
+    def test_rich_profile_round_trips(self):
+        src_repo, src_path = _tmp_repo({})
+        BulkConfigureUseCase(src_repo).execute({"system": {"hostname": "ops", "unmanaged": "isolate"}})
+        BulkConfigureUseCase(src_repo).execute({"system": {"dns": ["1.1.1.1", "9.9.9.9"]}})
+        BulkConfigureUseCase(src_repo).execute({"ntp": {"servers": ["0.pool.ntp.org"]}})
+        BulkConfigureUseCase(src_repo).execute({"interface_name": "eth0", "interface_config": {
+            "mode": "static", "ip": ["10.0.0.5/24"], "dns": ["8.8.8.8"], "trusted": ["192.168.1.0/24"]}})
+        BulkConfigureUseCase(src_repo).execute({"backend": {"firewall_provider": "iptables"}})
+        pb_fd, pb_path = tempfile.mkstemp(suffix=".json")
+        os.close(pb_fd)
+        dst_repo, dst_path = _tmp_repo({})
+        try:
+            ExportConfigUseCase(src_repo).execute(pb_path)
+            ImportConfigUseCase(dst_repo).execute(pb_path)
+            assert dst_repo.load_state() == src_repo.load_state()
+        finally:
+            _cleanup(src_path)
+            _cleanup(dst_path)
+            _cleanup(pb_path)
+
+    def test_import_missing_file_raises(self):
+        repo, path = _tmp_repo({})
+        try:
+            with pytest.raises(FileNotFoundError):
+                ImportConfigUseCase(repo).execute("/no/such/playbook.json")
+        finally:
+            _cleanup(path)
+
+    def test_import_invalid_json_raises_value_error(self):
+        bad_fd, bad_path = tempfile.mkstemp(suffix=".json")
+        os.close(bad_fd)
+        with open(bad_path, "w") as f:
+            f.write("{ not valid json")
+        repo, path = _tmp_repo({})
+        try:
+            with pytest.raises(ValueError):
+                ImportConfigUseCase(repo).execute(bad_path)
+        finally:
+            _cleanup(path)
+            _cleanup(bad_path)
+
+    def test_import_non_object_raises_value_error(self):
+        arr_fd, arr_path = tempfile.mkstemp(suffix=".json")
+        os.close(arr_fd)
+        with open(arr_path, "w") as f:
+            json.dump([1, 2, 3], f)
+        repo, path = _tmp_repo({})
+        try:
+            with pytest.raises(ValueError):
+                ImportConfigUseCase(repo).execute(arr_path)
+        finally:
+            _cleanup(path)
+            _cleanup(arr_path)

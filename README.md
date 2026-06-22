@@ -160,6 +160,12 @@ dash-range (`192.168.0-5.10`) notation for IPv4, strict CIDR for IPv6, and `IP:P
 rules. At commit time, `excluded` is subtracted from `trusted`/`target` and the result is collapsed
 into minimal CIDR sets.
 
+**Playbooks.** A `session.json` *is* the playbook format. Export the staged session to a shareable
+file with `write <file>` (e.g. `opctl write mission.json`) and load one back with `import <file>`
+(`opctl import mission.json`, or `import` at the shell root) — `import` replaces the staged session
+and the two round-trip. Import validates the playbook's structure (block shapes / zone lists);
+field-value validation is still planned.
+
 ## Development
 
 ```bash
@@ -178,12 +184,13 @@ There is no build/compile step. Adding a command or flag is a single edit to
 
 opctl is at **v0.1.0** and under active development. Working today across both the **interactive
 shell** and the **one-shot POSIX CLI**: hostname, per-interface MAC/IP/mode/DNS/up-down, NTP
-enable/disable, and firewall zone rules (`trusted`/`target`/`excluded`, global and per-interface);
-staged-vs-live diffing (`show`); and a transactional `execute` that commits to Linux and Windows
-hosts and rolls back on failure. Still being wired up:
+enable/disable, firewall zone rules (`trusted`/`target`/`excluded`, global and per-interface), and
+provider selection (`backend`); export/import of playbooks (`write` / `import`); staged-vs-live
+diffing (`show`); and a transactional `execute` that commits to Linux and Windows hosts and rolls
+back on failure. Still being wired up:
 
-- **Importing a saved playbook** (`ImportConfigUseCase`) is implemented but not yet wired to a
-  command.
+- Playbook **import validates structure, not field values** (blocks must be objects, policy zones
+  must be lists); field-level validation and a richer mission-frontmatter format are planned.
 - IPv6 firewalling is a no-op under the `iptables` provider specifically (use `firewalld`/`ufw` for
   IPv6 blocking).
 - NTP currently stages enable/disable only; setting the server/pool list is in progress.

@@ -113,6 +113,11 @@ class TestCliParser:
         with pytest.raises(SystemExit):
             self.parser.parse_args(["backend", "--firewall-provider", "bogus"])
 
+    def test_import_parses_path(self):
+        args = self.parser.parse_args(["import", "playbook.json"])
+        assert args.command == "import"
+        assert args.target == "playbook.json"
+
 
 class TestResolvePosixPayload:
     """Translation from the argparse namespace into the standardized payload dict."""
@@ -165,3 +170,9 @@ class TestResolvePosixPayload:
         args = self.parser.parse_args(["backend", "--system-provider", "hostnamectl"])
         payload = resolve_posix_payload(args)
         assert payload["backend"]["system_provider"] == "hostnamectl"
+
+    def test_import_routes_value(self):
+        args = self.parser.parse_args(["import", "playbook.json"])
+        payload = resolve_posix_payload(args)
+        assert payload["_cmd_reference"] == "import"
+        assert payload["value"] == "playbook.json"

@@ -3,7 +3,7 @@ from .use_cases.bulk_configure_uc import BulkConfigureUseCase
 from .use_cases.commit_policy_uc import CommitPolicyUseCase
 from .use_cases.status_report_uc import StatusReportUseCase
 from .use_cases.list_interfaces_uc import ListInterfacesUseCase
-from .use_cases.transfer_config_uc import ExportConfigUseCase
+from .use_cases.transfer_config_uc import ExportConfigUseCase, ImportConfigUseCase
 from .use_cases.remove_rule_uc import RemoveRuleUseCase
 from .domain.models.policy import OpPolicy
 
@@ -56,6 +56,19 @@ def handle_write(repo, os_adapter, payload):
     target = payload.get("value") or "session.json"
     ExportConfigUseCase(repo).execute(target)
     print(f"[*] Configuration saved to {target}")
+
+def handle_import(repo, os_adapter, payload):
+    payload = payload or {}
+    path = payload.get("value")
+    if not path:
+        print("[!] Usage: import <playbook.json>")
+        return
+    try:
+        ImportConfigUseCase(repo).execute(path)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"[!] Import failed: {e}")
+        return
+    print(f"[*] Imported playbook from {path} (replaces the staged session).")
 
 def handle_remove(repo, os_adapter, payload):
     payload = payload or {}
@@ -129,6 +142,14 @@ COMMAND_SCHEMA = {
         "default": "session.json",
         "handler": handle_write,
         "valid_modes": VALID_MODES
+    },
+    "import": {
+        "type": "action",
+        "category": "Actions",
+        "help": "Load a playbook (JSON) and replace the staged session",
+        "nargs": "?",
+        "handler": handle_import,
+        "valid_modes": ["root"]
     },
     "show": {
         "type": "action",

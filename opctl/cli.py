@@ -43,11 +43,11 @@ def resolve_posix_payload(args) -> Dict[str, Any]:
     }
     
     # Notice we inject _mode so the 'show' handler works exactly like the Shell
-    if command in ["execute", "write", "show"]:
+    if command in ["execute", "write", "show", "import"]:
         return {
             "value": arg_dict.get("target"),
             "_cmd_reference": command,
-            "_mode": "root" 
+            "_mode": "root"
         }
 
     if not settings_provided:

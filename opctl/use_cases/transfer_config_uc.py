@@ -1,10 +1,15 @@
 import json
 import os
 from opctl.domain.models import OpProfile
+from opctl.domain.models.policy import OpPolicy
 from opctl.domain.interfaces import IPolicyRepository
 
 class ImportConfigUseCase:
-    """Loads a JSON playbook and overwrites the current session state."""
+    """Loads a JSON playbook and replaces the current session state."""
+
+    # Top-level blocks that must be JSON objects when present.
+    _OBJECT_BLOCKS = ("system", "network", "ntp", "backend", "global_policy", "interfaces")
+
     def __init__(self, repo: IPolicyRepository):
         self.repo = repo
 
@@ -18,11 +23,41 @@ class ImportConfigUseCase:
             except json.JSONDecodeError:
                 raise ValueError("Playbook must be a valid JSON file.")
 
-        # Inflate via the Domain Model to validate the schema automatically
-        profile = OpProfile(imported_data)
-        
-        # Overwrite the current active session
+        self._validate_structure(imported_data)
+
+        # Structural validation above guarantees from_dict won't choke; it then
+        # normalizes the OpProfile shape and drops unknown keys. Field-level /
+        # semantic validation (valid CIDRs, provider names, …) is deferred to #3.
+        profile = OpProfile.from_dict(imported_data)
+
+        # Replace the current active session
         self.repo.save_state(profile.to_dict())
+
+    @classmethod
+    def _validate_structure(cls, data) -> None:
+        """Verify the playbook is shaped like an OpProfile (raises ValueError)."""
+        if not isinstance(data, dict):
+            raise ValueError("Playbook must be a JSON object.")
+
+        for block in cls._OBJECT_BLOCKS:
+            if block in data and not isinstance(data[block], dict):
+                raise ValueError(f"Playbook '{block}' must be an object.")
+
+        cls._validate_zones(data.get("global_policy", {}), "global_policy")
+
+        for name, iface in data.get("interfaces", {}).items():
+            if not isinstance(iface, dict):
+                raise ValueError(f"Playbook interface '{name}' must be an object.")
+            policy = iface.get("policy", {})
+            if not isinstance(policy, dict):
+                raise ValueError(f"Playbook interface '{name}' policy must be an object.")
+            cls._validate_zones(policy, f"interface '{name}' policy")
+
+    @staticmethod
+    def _validate_zones(policy: dict, where: str) -> None:
+        for zone in OpPolicy.ZONES:
+            if zone in policy and not isinstance(policy[zone], list):
+                raise ValueError(f"{where} zone '{zone}' must be a list of rules.")
 
 class ExportConfigUseCase:
     """Exports the currently staged session state to a shareable JSON playbook."""
