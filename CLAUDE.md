@@ -191,5 +191,6 @@ These are real and worth knowing when working in the code — they are not yet f
 
 - `IptablesProvider.apply_ipv6_blocks/allows` are `pass` (no-ops) — IPv6 firewalling is silently not
   applied under iptables (would need `ip6tables`). Tracked in #20.
-- `ImportConfigUseCase` calls `OpProfile(imported_data)` instead of `OpProfile.from_dict(...)`, so it
-  discards the imported profile, and it is not wired to any command. Tracked in #2.
+- Playbook **import validates structure, not field values** — top-level blocks must be objects and
+  policy zones must be lists (`ImportConfigUseCase._validate_structure`), then `OpProfile.from_dict`
+  normalizes. Field-level/semantic validation and a mission-frontmatter wrapper are deferred to #3.

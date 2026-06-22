@@ -4,7 +4,7 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 from opctl.adapters.json_repository import JsonPolicyRepository
-from opctl.command_schema import handle_show, handle_write, handle_config, handle_remove
+from opctl.command_schema import handle_show, handle_write, handle_config, handle_remove, handle_import
 
 
 def _tmp_repo(initial_state=None):
@@ -181,3 +181,50 @@ class TestHandleRemove:
             assert "No matching" in out
         finally:
             _cleanup(path)
+
+
+class TestHandleImport:
+
+    def test_imports_and_reports(self, capsys):
+        pb_fd, pb_path = tempfile.mkstemp(suffix=".json")
+        os.close(pb_fd)
+        with open(pb_path, "w") as f:
+            json.dump({"system": {"hostname": "from-playbook"}}, f)
+        repo, path = _tmp_repo({})
+        try:
+            handle_import(repo, MagicMock(), {"value": pb_path})
+            assert "Imported playbook" in capsys.readouterr().out
+            assert repo.load_state()["system"]["hostname"] == "from-playbook"
+        finally:
+            _cleanup(path)
+            _cleanup(pb_path)
+
+    def test_missing_path_prints_usage(self, capsys):
+        repo, path = _tmp_repo({})
+        try:
+            handle_import(repo, MagicMock(), {})
+            assert "Usage" in capsys.readouterr().out
+        finally:
+            _cleanup(path)
+
+    def test_missing_file_prints_error_not_raise(self, capsys):
+        repo, path = _tmp_repo({})
+        try:
+            handle_import(repo, MagicMock(), {"value": "/no/such/file.json"})
+            assert "Import failed" in capsys.readouterr().out
+        finally:
+            _cleanup(path)
+
+    def test_malformed_structure_prints_error_not_raise(self, capsys):
+        # A wrong-typed substructure must surface as a message, not crash the shell/CLI.
+        bad_fd, bad_path = tempfile.mkstemp(suffix=".json")
+        os.close(bad_fd)
+        with open(bad_path, "w") as f:
+            json.dump({"interfaces": "x"}, f)
+        repo, path = _tmp_repo({})
+        try:
+            handle_import(repo, MagicMock(), {"value": bad_path})  # must NOT raise
+            assert "Import failed" in capsys.readouterr().out
+        finally:
+            _cleanup(path)
+            _cleanup(bad_path)

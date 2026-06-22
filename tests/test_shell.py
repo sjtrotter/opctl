@@ -239,3 +239,19 @@ class TestShellBackend:
             assert "Invalid choice" in capsys.readouterr().out
         finally:
             _cleanup(path)
+
+
+class TestShellImport:
+
+    def test_import_loads_playbook_in_root_mode(self):
+        pb_fd, pb_path = tempfile.mkstemp(suffix=".json")
+        os.close(pb_fd)
+        with open(pb_path, "w") as f:
+            json.dump({"system": {"hostname": "shell-import"}}, f)
+        shell, path = _make_shell()
+        try:
+            shell.do_import(pb_path)
+            assert shell.repo.load_state()["system"]["hostname"] == "shell-import"
+        finally:
+            _cleanup(path)
+            _cleanup(pb_path)
