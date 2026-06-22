@@ -1,7 +1,7 @@
 import subprocess
 from opctl.domain.services.validators import (
     validate_hostname, validate_mac, validate_ip,
-    validate_dns, validate_interface, validate_port,
+    validate_dns, validate_interface, validate_port, validate_ntp_server,
 )
 
 
@@ -13,6 +13,7 @@ class WindowsProvider:
     validate_dns = staticmethod(validate_dns)
     validate_interface = staticmethod(validate_interface)
     validate_port = staticmethod(validate_port)
+    validate_ntp_server = staticmethod(validate_ntp_server)
 
     def _run_ps(self, cmd: str) -> str:
         try:

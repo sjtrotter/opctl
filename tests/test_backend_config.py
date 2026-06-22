@@ -11,12 +11,14 @@ class TestBackendConfig:
         assert cfg.system_provider == "auto"
 
     def test_to_dict(self):
-        cfg = BackendConfig(firewall_provider="iptables", network_provider="nmcli", system_provider="hostnamectl")
+        cfg = BackendConfig(firewall_provider="iptables", network_provider="nmcli",
+                            system_provider="hostnamectl", ntp_provider="chrony")
         d = cfg.to_dict()
         assert d == {
             "firewall_provider": "iptables",
             "network_provider": "nmcli",
             "system_provider": "hostnamectl",
+            "ntp_provider": "chrony",
         }
 
     def test_round_trip_defaults(self):

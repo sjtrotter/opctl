@@ -70,6 +70,14 @@ class IFirewallAdapter(ABC):
     @abstractmethod
     def apply_ipv6_allows(self, cidrs: List[str], port_overrides: List[str], interface: Optional[str] = None) -> None: pass
 
+class INtpAdapter(ABC):
+    """Controls time synchronization (the NTP daemon + its server list)."""
+    @abstractmethod
+    def set_servers(self, servers: List[str], enabled: bool) -> None: pass
+
+    @abstractmethod
+    def get_servers(self) -> List[str]: pass
+
 class IPolicyRepository(ABC):
     """Handles persistence of the Aggregate Root state."""
     @abstractmethod

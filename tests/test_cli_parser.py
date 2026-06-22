@@ -113,6 +113,15 @@ class TestCliParser:
         with pytest.raises(SystemExit):
             self.parser.parse_args(["backend", "--firewall-provider", "bogus"])
 
+    def test_ntp_servers_flag(self):
+        args = self.parser.parse_args(["ntp", "--servers", "0.pool.ntp.org", "1.pool.ntp.org"])
+        assert args.command == "ntp"
+        assert args.servers == ["0.pool.ntp.org", "1.pool.ntp.org"]
+
+    def test_backend_ntp_provider_flag(self):
+        args = self.parser.parse_args(["backend", "--ntp-provider", "chrony"])
+        assert args.ntp_provider == "chrony"
+
     def test_import_parses_path(self):
         args = self.parser.parse_args(["import", "playbook.json"])
         assert args.command == "import"
@@ -176,3 +185,8 @@ class TestResolvePosixPayload:
         payload = resolve_posix_payload(args)
         assert payload["_cmd_reference"] == "import"
         assert payload["value"] == "playbook.json"
+
+    def test_ntp_servers_routes_to_ntp_payload(self):
+        args = self.parser.parse_args(["ntp", "--servers", "a.example.com"])
+        payload = resolve_posix_payload(args)
+        assert payload["ntp"]["servers"] == ["a.example.com"]

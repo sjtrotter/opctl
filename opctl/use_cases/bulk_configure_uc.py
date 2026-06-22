@@ -41,6 +41,7 @@ class BulkConfigureUseCase:
             if "firewall_provider" in be_cfg: profile.backend.firewall_provider = be_cfg["firewall_provider"]
             if "network_provider" in be_cfg: profile.backend.network_provider = be_cfg["network_provider"]
             if "system_provider" in be_cfg: profile.backend.system_provider = be_cfg["system_provider"]
+            if "ntp_provider" in be_cfg: profile.backend.ntp_provider = be_cfg["ntp_provider"]
 
         # 3. Interface-Specific Config & Local Policy
         if "interface_name" in payload:

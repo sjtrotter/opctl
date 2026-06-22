@@ -2,7 +2,9 @@ from dataclasses import dataclass, field
 from typing import Callable, List, Optional
 
 from opctl.domain.models.profile import OpProfile
-from opctl.domain.interfaces import IPolicyRepository, ISystemAdapter, INetworkAdapter, IFirewallAdapter
+from opctl.domain.interfaces import (
+    IPolicyRepository, ISystemAdapter, INetworkAdapter, IFirewallAdapter, INtpAdapter,
+)
 from opctl.domain.services.ip_parser import IPParser
 
 
@@ -41,11 +43,13 @@ class CommitPolicyUseCase:
     """
 
     def __init__(self, repo: IPolicyRepository, sys_os: ISystemAdapter,
-                 net_os: INetworkAdapter, fw_os: IFirewallAdapter):
+                 net_os: INetworkAdapter, fw_os: IFirewallAdapter,
+                 ntp_os: Optional[INtpAdapter] = None):
         self.repo = repo
         self.sys_os = sys_os
         self.net_os = net_os
         self.fw_os = fw_os
+        self.ntp_os = ntp_os
 
     def execute(self) -> CommitReport:
         profile = OpProfile.from_dict(self.repo.load_state())
@@ -78,6 +82,18 @@ class CommitPolicyUseCase:
                 (lambda o=old_hostname: self.sys_os.set_hostname(o)) if old_hostname else None,
                 undo_name=f"restore hostname -> {old_hostname}",
             )
+
+        # 1b. NTP time synchronization (host-level identity) — applied before the
+        #     firewall/interface churn so a transient link-down can't race it.
+        #     NTP is an idempotent, benign host setting and is NOT rolled back: we
+        #     can't capture the daemon's full prior state, and restoring with a
+        #     guessed enabled-flag could wrongly flip time sync on or off.
+        if self.ntp_os is not None and (profile.ntp.servers or profile.ntp.enabled):
+            label = ",".join(profile.ntp.servers) or "enabled"
+            if not profile.ntp.enabled:
+                label += " (disabled)"
+            step(f"ntp -> {label}",
+                 lambda: self.ntp_os.set_servers(profile.ntp.servers, profile.ntp.enabled))
 
         # 2. Firewall: reset, then apply the global policy. A single flush undo
         #    removes every managed rule we add (global + per-interface).

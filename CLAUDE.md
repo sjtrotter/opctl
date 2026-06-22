@@ -85,9 +85,9 @@ Front-ends:  POSIX CLI (cli.py + cli_parser.py)  ─┐
     CIDR, splat (`192.168.*.10`), and inclusive dash-range (`192.168.0-5.10`); a bare address becomes
     `/32`. **IPv6 is strict CIDR only** (splat/dash raise, to prevent memory exhaustion). Callers
     must strip any `:PORT` before parsing, since a colon forces the IPv6 path.
-  - `interfaces.py` — **five** ABC ports: the three adapter ports (`ISystemAdapter`,
-    `INetworkAdapter`, `IFirewallAdapter`), plus `IProvider` (`provider_name()` / `is_available()`,
-    used for selection) and `IPolicyRepository`.
+  - `interfaces.py` — **six** ABC ports: the four adapter ports (`ISystemAdapter`,
+    `INetworkAdapter`, `IFirewallAdapter`, `INtpAdapter`), plus `IProvider` (`provider_name()` /
+    `is_available()`, used for selection) and `IPolicyRepository`.
   - `exceptions/` — `OpCtlDomainError` root, `InvalidNetworkFormatError`, `ConflictingPolicyError`.
 - **`opctl/use_cases/`** — Orchestration. Each loads staged state, applies changes, and either saves
   back or drives an OS adapter. `CommitPolicyUseCase` is the **only** one that touches hardware.
@@ -107,7 +107,7 @@ Front-ends:  POSIX CLI (cli.py + cli_parser.py)  ─┐
 ### Provider layer (per-OS, auto-resolved)
 
 The backends do not implement OS logic themselves — they compose **providers**, one per concern,
-each wrapping a specific OS CLI tool. `BackendConfig` (three fields, each defaulting to `"auto"`,
+each wrapping a specific OS CLI tool. `BackendConfig` (four fields, each defaulting to `"auto"`,
 read from `session.json`'s top-level `backend` block, and staged via the `backend` command —
 `configure` → `backend`, or `opctl backend --firewall-provider …`) drives selection via
 `infrastructure/_resolve.py::resolve_provider`:
@@ -125,8 +125,11 @@ supplies the subprocess runner and re-exports the central validators.
 | **system** (hostname) | `hostnamectl` → `hostname` | `powershell` (`Rename-Computer`) → `wmic` |
 | **network** (NIC/L3) | `nmcli` → `iproute2` (`ip`) → `ifconfig` | `powershell` (`Net*` cmdlets) → `netsh` |
 | **firewall** | `firewalld` → `ufw` → `iptables` | `powershell` (`New-NetFirewallRule`) → `netsh` |
+| **ntp** | `timesyncd` ⊕ `chrony` (mutually exclusive by `is_available`) | `w32tm` |
 
-PowerShell is first on Windows, so it is the default whenever `powershell` is on PATH.
+PowerShell is first on Windows, so it is the default whenever `powershell` is on PATH. The NTP
+providers are the only adapter without a strict precedence chain — `timesyncd.is_available` requires
+`chronyc` to be absent, so exactly one matches; `ntpd` is intentionally not auto-selected.
 
 ### Staged vs live paradigm
 
@@ -135,7 +138,8 @@ All mutations write to `session.json` (staged intent). Nothing touches hardware 
 a **diff-first** report — a tally line, then `CHANGES` (`live -> staged`), `IN SYNC`, and `STAGED`
 (fields with no live equivalent) groups; unconfigured fields are omitted. Only `execute`
 (→ `CommitPolicyUseCase`) pushes the staged profile to the OS, as a tracked transaction with
-best-effort rollback. Commit order: set hostname → flush managed firewall rules → apply global policy
+best-effort rollback. Commit order: set hostname → apply NTP (server list + enable/disable) → flush
+managed firewall rules → apply global policy
 (blocks, then allows) → per-interface loop (down → MAC → local policy → static/DHCP → up; disabled
 interfaces are just brought down and skipped) → **unmanaged-interface policy** (`isolate` = deny-all
 egress, `disable` = link down, for NICs present on the host but not in the session; `ignore` = no-op).

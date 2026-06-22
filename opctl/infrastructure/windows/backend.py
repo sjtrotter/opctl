@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from opctl.domain.interfaces import ISystemAdapter, INetworkAdapter, IFirewallAdapter
+from opctl.domain.interfaces import ISystemAdapter, INetworkAdapter, IFirewallAdapter, INtpAdapter
 from opctl.domain.models.backend import BackendConfig
 from opctl.infrastructure._resolve import resolve_provider
 
@@ -10,19 +10,22 @@ from .providers.network.powershell import PowerShellNetworkProvider
 from .providers.network.netsh import NetshNetworkProvider
 from .providers.firewall.powershell import PowerShellFirewallProvider
 from .providers.firewall.netsh import NetshFirewallProvider
+from .providers.ntp.w32tm import W32tmProvider
 
 _SYSTEM_PROVIDERS = [PowerShellSystemProvider, WmicSystemProvider]
 _NETWORK_PROVIDERS = [PowerShellNetworkProvider, NetshNetworkProvider]
 _FIREWALL_PROVIDERS = [PowerShellFirewallProvider, NetshFirewallProvider]
+_NTP_PROVIDERS = [W32tmProvider]
 
 
-class WindowsBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter):
+class WindowsBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter, INtpAdapter):
 
     def __init__(self, config: Optional[BackendConfig] = None):
         cfg = config or BackendConfig()
         self._system: ISystemAdapter = resolve_provider(cfg.system_provider, _SYSTEM_PROVIDERS)
         self._network: INetworkAdapter = resolve_provider(cfg.network_provider, _NETWORK_PROVIDERS)
         self._firewall: IFirewallAdapter = resolve_provider(cfg.firewall_provider, _FIREWALL_PROVIDERS)
+        self._ntp: INtpAdapter = resolve_provider(cfg.ntp_provider, _NTP_PROVIDERS)
 
     # --- ISystemAdapter ---
     def set_hostname(self, hostname: str) -> None:
@@ -82,3 +85,10 @@ class WindowsBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter):
     def apply_ipv6_allows(self, cidrs: List[str], port_overrides: List[str],
                           interface: Optional[str] = None) -> None:
         self._firewall.apply_ipv6_allows(cidrs, port_overrides, interface)
+
+    # --- INtpAdapter ---
+    def set_servers(self, servers: List[str], enabled: bool) -> None:
+        self._ntp.set_servers(servers, enabled)
+
+    def get_servers(self) -> List[str]:
+        return self._ntp.get_servers()

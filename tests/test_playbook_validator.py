@@ -59,6 +59,9 @@ class TestPlaybookValidator:
     def test_bad_provider(self):
         assert any("firewall_provider" in e for e in validate_playbook({"backend": {"firewall_provider": "bogus"}}))
 
+    def test_bad_ntp_provider(self):
+        assert any("ntp_provider" in e for e in validate_playbook({"backend": {"ntp_provider": "bogus"}}))
+
     def test_bad_ntp_server(self):
         assert any("ntp.servers" in e for e in validate_playbook({"ntp": {"servers": ["bad host!"]}}))
 

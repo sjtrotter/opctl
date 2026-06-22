@@ -72,6 +72,7 @@ class OpProfile:
                 firewall_provider=be_data.get("firewall_provider", "auto"),
                 network_provider=be_data.get("network_provider", "auto"),
                 system_provider=be_data.get("system_provider", "auto"),
+                ntp_provider=be_data.get("ntp_provider", "auto"),
             ),
             meta=MissionMeta.from_dict(data["meta"]) if isinstance(data.get("meta"), dict) else None,
         )
