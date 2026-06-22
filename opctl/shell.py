@@ -2,6 +2,7 @@ import cmd
 import shlex
 import sys
 from .command_schema import COMMAND_SCHEMA
+from .adapters.json_repository import SessionLockError
 
 class OpctlShell(cmd.Cmd):
     intro = "\nWelcome to opctl Tactical Shell.\nType 'help' to see available commands.\n"
@@ -39,6 +40,13 @@ class OpctlShell(cmd.Cmd):
             return " ".join(parts)
             
         return " ".join(parts)
+
+    def onecmd(self, line: str):
+        try:
+            return super().onecmd(line)
+        except SessionLockError as e:
+            print(f"[!] {e}")
+            return False
 
     def default(self, line: str):
         cmd_word = line.split()[0]

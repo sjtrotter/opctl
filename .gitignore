@@ -1,4 +1,5 @@
 session.json
+session.json.lock
 .claude/
 
 # Byte-compiled / optimized / DLL files

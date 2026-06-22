@@ -1,7 +1,7 @@
 import sys
 from typing import Dict, Any
 from . import get_os_interface
-from .adapters.json_repository import JsonPolicyRepository
+from .adapters.json_repository import JsonPolicyRepository, SessionLockError
 from .cli_parser import build_parser
 from .domain.models.backend import BackendConfig
 from .shell import OpctlShell
@@ -97,20 +97,24 @@ def main():
         sys.exit(1)
 
     cmd_ref = payload.pop("_cmd_reference", None)
-    
-    if cmd_ref and cmd_ref in COMMAND_SCHEMA:
-        handler = COMMAND_SCHEMA[cmd_ref].get("handler")
-        if handler:
-            handler(repo, os_adapter, payload)
-        else:
-            fallback_handler = COMMAND_SCHEMA["hostname"].get("handler")
-            if fallback_handler:
-                fallback_handler(repo, os_adapter, payload)
-                print(f"[*] Configuration staged successfully.")
+
+    try:
+        if cmd_ref and cmd_ref in COMMAND_SCHEMA:
+            handler = COMMAND_SCHEMA[cmd_ref].get("handler")
+            if handler:
+                handler(repo, os_adapter, payload)
             else:
-                print("[!] Error: No valid handler found in schema.")
-    else:
-        print("[!] Error resolving command handler.")
+                fallback_handler = COMMAND_SCHEMA["hostname"].get("handler")
+                if fallback_handler:
+                    fallback_handler(repo, os_adapter, payload)
+                    print(f"[*] Configuration staged successfully.")
+                else:
+                    print("[!] Error: No valid handler found in schema.")
+        else:
+            print("[!] Error resolving command handler.")
+    except SessionLockError as e:
+        print(f"[!] {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

@@ -98,7 +98,11 @@ Front-ends:  POSIX CLI (cli.py + cli_parser.py)  ─┐
 - **`opctl/adapters/`** — `JsonPolicyRepository` is the only persistence implementation. It is
   schema-agnostic (returns the raw dict; `{}` for both a missing and a corrupted file) and resolves
   `session.json` **relative to the current working directory**. The on-disk schema is owned by
-  `OpProfile.to_dict()`, not the repository.
+  `OpProfile.to_dict()`, not the repository. **Writes are atomic** (temp file + `os.replace`) and
+  serialized by an advisory lock on `session.json.lock` (`fcntl`/`msvcrt`), raising `SessionLockError`
+  (fail-fast) when another opctl process holds it; **reads are lock-free** (an atomic rename means a
+  reader never sees a partial file). The lock spans a single write, **not** a full load-modify-save,
+  so concurrent edits by two processes are last-writer-wins (acceptable for single-operator use).
 - **`opctl/command_schema.py`** — **Single source of truth** for all commands: name, aliases, flags,
   `valid_modes`, handler reference, and command type. Both the POSIX parser (`cli_parser.py`) and the
   interactive shell (`shell.py`) are generated dynamically from this schema. **Add commands/flags
