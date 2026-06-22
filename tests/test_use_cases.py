@@ -294,6 +294,103 @@ class TestCommitPolicyUseCase:
         finally:
             _cleanup(path)
 
+    def _managed_eth0(self):
+        return {"eth0": {"mode": "dhcp", "ip_addresses": [], "gateway": "",
+                         "dns_servers": [], "enabled": True}}
+
+    def test_unmanaged_disable_brings_down_unmanaged_only(self):
+        state = {"system": {"unmanaged_policy": "disable"}, "interfaces": self._managed_eth0()}
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        net_m.get_available_interfaces.return_value = ["eth0", "eth1", "wlan0"]
+        try:
+            CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            calls = [c.args for c in net_m.set_link_state.call_args_list]
+            assert ("eth1", "down") in calls and ("wlan0", "down") in calls
+            assert ("eth1", "up") not in calls           # unmanaged stays down
+            assert ("eth0", "up") in calls               # managed iface configured + up
+        finally:
+            _cleanup(path)
+
+    def test_unmanaged_isolate_denies_egress_on_unmanaged_only(self):
+        state = {"system": {"unmanaged_policy": "isolate"}, "interfaces": self._managed_eth0()}
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        net_m.get_available_interfaces.return_value = ["eth0", "eth1"]
+        try:
+            CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            v4 = fw_m.apply_ipv4_blocks.call_args_list
+            assert any(c.args[0] == ["0.0.0.0/0"] and c.args[2] == "eth1" for c in v4)
+            assert not any(c.args[0] == ["0.0.0.0/0"] and c.args[2] == "eth0" for c in v4)
+            v6 = fw_m.apply_ipv6_blocks.call_args_list
+            assert any(c.args[0] == ["::/0"] and c.args[2] == "eth1" for c in v6)
+        finally:
+            _cleanup(path)
+
+    def test_unmanaged_ignore_leaves_unmanaged_alone(self):
+        state = {"system": {"unmanaged_policy": "ignore"}, "interfaces": self._managed_eth0()}
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        net_m.get_available_interfaces.return_value = ["eth0", "eth1"]
+        try:
+            CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert ("eth1", "down") not in [c.args for c in net_m.set_link_state.call_args_list]
+            assert not any(c.args[0] == ["0.0.0.0/0"] for c in fw_m.apply_ipv4_blocks.call_args_list)
+        finally:
+            _cleanup(path)
+
+    def test_unmanaged_enumeration_failure_is_surfaced_not_silent(self):
+        # Fail-closed: if the interface query fails, the isolate sweep must not be
+        # silently skipped — it surfaces as a failed step and rolls back.
+        state = {"system": {"unmanaged_policy": "isolate"}}
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        net_m.get_available_interfaces.side_effect = RuntimeError("adapter query failed")
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert report.success is False
+            assert report.rolled_back is True
+            assert any(s.status == "failed" and "enumerate" in s.name for s in report.steps)
+            assert not any(c.args[0] == ["0.0.0.0/0"] for c in fw_m.apply_ipv4_blocks.call_args_list)
+        finally:
+            _cleanup(path)
+
+    def test_unmanaged_isolate_failure_rolls_back_blocks(self):
+        state = {"system": {"unmanaged_policy": "isolate"}}
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        net_m.get_available_interfaces.return_value = ["eth1", "eth2"]
+
+        def blocks(cidrs, ports, iface=None):
+            if iface == "eth2":
+                raise RuntimeError("firewall busy")
+        fw_m.apply_ipv4_blocks.side_effect = blocks
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert report.rolled_back is True
+            # rollback re-flushes managed rules, clearing eth1's deny-all blocks
+            assert fw_m.flush_managed_rules.call_count >= 2
+        finally:
+            _cleanup(path)
+
+    def test_unmanaged_disable_failure_rolls_back(self):
+        state = {"system": {"unmanaged_policy": "disable"}}  # no managed interfaces
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        net_m.get_available_interfaces.return_value = ["eth1", "eth2"]
+
+        def link(iface, st):
+            if iface == "eth2" and st == "down":
+                raise RuntimeError("device busy")
+        net_m.set_link_state.side_effect = link
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert report.rolled_back is True
+            # eth1 was downed, then brought back up during rollback
+            assert ("eth1", "up") in [c.args for c in net_m.set_link_state.call_args_list]
+        finally:
+            _cleanup(path)
+
     def test_invalid_firewall_rule_fails_and_rolls_back(self):
         # A bad staged rule must fail the commit (and roll back), not crash:
         # compile() runs inside the tracked step.

@@ -126,6 +126,33 @@ class CommitPolicyUseCase:
             step(f"{iname}: link up",
                  lambda n=iname: self.net_os.set_link_state(n, "up"))
 
+        # 5. Unmanaged-interface policy — applied to NICs present on the host but not
+        #    explicitly configured in the session. 'ignore' (default) does nothing.
+        unmanaged_policy = profile.system.unmanaged_policy
+        if unmanaged_policy in ("isolate", "disable") and not failed:
+            # Enumerate as a tracked step so a query failure SURFACES (and rolls back)
+            # rather than silently skipping the sweep — the 'isolate' deny-all is a
+            # security posture, so a silent skip would be fail-open.
+            available: List[str] = []
+            step("unmanaged: enumerate interfaces",
+                 lambda: available.extend(self.net_os.get_available_interfaces()))
+            # Normalize names so case/whitespace differences (e.g. Windows friendly
+            # names) can't misclassify a managed NIC as unmanaged.
+            managed = {n.strip().casefold() for n in profile.interfaces}
+            for iname in available:
+                if iname.strip().casefold() in managed:
+                    continue
+                if unmanaged_policy == "disable":
+                    step(f"unmanaged {iname}: link down",
+                         lambda n=iname: self.net_os.set_link_state(n, "down"),
+                         lambda n=iname: self.net_os.set_link_state(n, "up"),
+                         undo_name=f"bring unmanaged {iname} back up")
+                else:  # isolate
+                    # Default-deny egress on the unmanaged NIC. The managed-rule flush
+                    # undo (step 2) removes these blocks on rollback.
+                    step(f"unmanaged {iname}: isolate (deny all egress)",
+                         lambda n=iname: self._isolate(n))
+
         if failed:
             report.rolled_back = True
             for name, undo_action in reversed(undo):
@@ -144,6 +171,11 @@ class CommitPolicyUseCase:
         self.fw_os.apply_ipv6_blocks(pol["v6"]["blocked"], pol["v6"]["port_blocks"], interface)
         self.fw_os.apply_ipv4_allows(pol["v4"]["targets"] + pol["v4"]["trusted"], pol["v4"]["port_allows"], interface)
         self.fw_os.apply_ipv6_allows(pol["v6"]["targets"] + pol["v6"]["trusted"], pol["v6"]["port_allows"], interface)
+
+    def _isolate(self, interface: str) -> None:
+        """Default-deny: block all egress on an unmanaged interface (v4 + v6)."""
+        self.fw_os.apply_ipv4_blocks(["0.0.0.0/0"], [], interface)
+        self.fw_os.apply_ipv6_blocks(["::/0"], [], interface)
 
     @staticmethod
     def _capture(getter: Callable, *args):

@@ -132,10 +132,13 @@ PowerShell is first on Windows, so it is the default whenever `powershell` is on
 
 All mutations write to `session.json` (staged intent). Nothing touches hardware as you type.
 `show` (→ `StatusReportUseCase` → `ViewStatusUseCase`) diffs staged against live OS state and renders
-`[ SYNC ]` / `[ DIFF ]` rows per field. Only `execute` (→ `CommitPolicyUseCase`) pushes the staged
-profile to the OS. Commit order: set hostname → flush managed firewall rules → apply global policy
+a **diff-first** report — a tally line, then `CHANGES` (`live -> staged`), `IN SYNC`, and `STAGED`
+(fields with no live equivalent) groups; unconfigured fields are omitted. Only `execute`
+(→ `CommitPolicyUseCase`) pushes the staged profile to the OS, as a tracked transaction with
+best-effort rollback. Commit order: set hostname → flush managed firewall rules → apply global policy
 (blocks, then allows) → per-interface loop (down → MAC → local policy → static/DHCP → up; disabled
-interfaces are just brought down and skipped).
+interfaces are just brought down and skipped) → **unmanaged-interface policy** (`isolate` = deny-all
+egress, `disable` = link down, for NICs present on the host but not in the session; `ignore` = no-op).
 
 ### Interactive shell
 
@@ -199,3 +202,8 @@ These are real and worth knowing when working in the code — they are not yet f
 
 - `IptablesProvider.apply_ipv6_blocks/allows` are `pass` (no-ops) — IPv6 firewalling is silently not
   applied under iptables (would need `ip6tables`). Tracked in #20.
+- **The `firewalld` provider may not filter at all**: `flush_managed_rules` creates an `opctl` zone
+  but never binds an interface to it, `_add_rich_rule` ignores the `interface` arg and matches
+  `source` (not `destination`/egress). So global/per-interface/`isolate` rules may be inert or
+  mis-scoped under firewalld. `iptables`/`ufw` honor `-o interface` + egress correctly; `unmanaged
+  isolate` therefore works on those two, not firewalld. Tracked in #33.
