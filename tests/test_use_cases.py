@@ -569,6 +569,27 @@ class TestStatusReportUseCase:
         finally:
             _cleanup(path)
 
+    def test_mission_meta_shown_when_present(self):
+        repo, path = _tmp_repo({"meta": {"name": "recon-alpha", "version": 2, "description": ""}})
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        try:
+            out = "\n".join(StatusReportUseCase(repo, sys_m, self._net()).execute("root"))
+            assert "mission" in out and "recon-alpha" in out
+        finally:
+            _cleanup(path)
+
+    def test_no_mission_section_without_meta(self):
+        repo, path = _tmp_repo({"system": {"hostname": "recon-01"}})
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        try:
+            out = "\n".join(StatusReportUseCase(repo, sys_m, self._net()).execute("root"))
+            assert "recon-01" in out   # report is non-empty
+            assert "mission" not in out
+        finally:
+            _cleanup(path)
+
     def test_backend_section_is_mode_scoped(self):
         repo, path = _tmp_repo({"backend": {
             "firewall_provider": "iptables", "network_provider": "auto", "system_provider": "auto"}})
@@ -688,6 +709,88 @@ class TestTransferConfig:
         finally:
             _cleanup(src_path)
             _cleanup(dst_path)
+            _cleanup(pb_path)
+
+    def test_import_rejects_invalid_field_values_and_keeps_session(self):
+        bad = {"system": {"hostname": "bad host!"}, "backend": {"firewall_provider": "bogus"}}
+        bad_fd, bad_path = tempfile.mkstemp(suffix=".json")
+        os.close(bad_fd)
+        with open(bad_path, "w") as f:
+            json.dump(bad, f)
+        repo, path = _tmp_repo({"system": {"hostname": "keep"}})
+        try:
+            with pytest.raises(ValueError):
+                ImportConfigUseCase(repo).execute(bad_path)
+            # rejected before save -> the staged session is untouched
+            assert repo.load_state()["system"]["hostname"] == "keep"
+        finally:
+            _cleanup(path)
+            _cleanup(bad_path)
+
+    def test_import_preserves_meta_and_round_trips(self):
+        playbook = {"meta": {"name": "recon", "version": 3, "description": "d"},
+                    "system": {"hostname": "recon-01"}}
+        pb_fd, pb_path = tempfile.mkstemp(suffix=".json")
+        os.close(pb_fd)
+        with open(pb_path, "w") as f:
+            json.dump(playbook, f)
+        repo, path = _tmp_repo({})
+        out_fd, out_path = tempfile.mkstemp(suffix=".json")
+        os.close(out_fd)
+        try:
+            ImportConfigUseCase(repo).execute(pb_path)
+            assert repo.load_state()["meta"] == {"name": "recon", "version": 3, "description": "d"}
+            ExportConfigUseCase(repo).execute(out_path)
+            dst_repo, dst_path = _tmp_repo({})
+            ImportConfigUseCase(dst_repo).execute(out_path)
+            assert dst_repo.load_state()["meta"] == repo.load_state()["meta"]
+            _cleanup(dst_path)
+        finally:
+            _cleanup(path)
+            _cleanup(pb_path)
+            _cleanup(out_path)
+
+    def test_full_valid_playbook_imports_end_to_end(self):
+        # The complete, valid playbook (mirrors the PLAYBOOK.md example) imports cleanly.
+        playbook = {
+            "meta": {"name": "recon-alpha", "version": 1, "description": "sweep"},
+            "system": {"hostname": "recon-01", "unmanaged_policy": "isolate"},
+            "network": {"global_dns": ["1.1.1.1"]},
+            "ntp": {"enabled": True, "servers": ["0.pool.ntp.org"]},
+            "interfaces": {"eth0": {"mode": "static", "randomize_mac": True,
+                                    "ip_addresses": ["10.10.0.5/24"], "gateway": "10.10.0.1",
+                                    "dns_servers": ["1.1.1.1"],
+                                    "policy": {"trusted": [], "target": ["10.10.0.0/24"],
+                                               "excluded": ["10.10.0.13"]}}},
+            "global_policy": {"trusted": ["192.168.1.0/24"], "target": ["10.0.0.0/24:443"], "excluded": []},
+            "backend": {"firewall_provider": "iptables", "network_provider": "iproute2", "system_provider": "auto"},
+        }
+        pb_fd, pb_path = tempfile.mkstemp(suffix=".json")
+        os.close(pb_fd)
+        with open(pb_path, "w") as f:
+            json.dump(playbook, f)
+        repo, path = _tmp_repo({})
+        try:
+            ImportConfigUseCase(repo).execute(pb_path)  # must not raise
+            s = repo.load_state()
+            assert s["meta"]["name"] == "recon-alpha"
+            assert s["interfaces"]["eth0"]["ip_addresses"] == ["10.10.0.5/24"]
+            assert "10.0.0.0/24:443" in s["global_policy"]["target"]
+        finally:
+            _cleanup(path)
+            _cleanup(pb_path)
+
+    def test_import_without_meta_has_no_meta_key(self):
+        pb_fd, pb_path = tempfile.mkstemp(suffix=".json")
+        os.close(pb_fd)
+        with open(pb_path, "w") as f:
+            json.dump({"system": {"hostname": "x"}}, f)
+        repo, path = _tmp_repo({})
+        try:
+            ImportConfigUseCase(repo).execute(pb_path)
+            assert "meta" not in repo.load_state()
+        finally:
+            _cleanup(path)
             _cleanup(pb_path)
 
     def test_import_missing_file_raises(self):

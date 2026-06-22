@@ -5,22 +5,27 @@ from .network import NetworkProfile
 from .ntp import NtpProfile
 from .interface import InterfaceProfile
 from .policy import OpPolicy
+from .meta import MissionMeta
 
 class OpProfile:
     """The Aggregate Root containing all modular payloads."""
-    
+
     def __init__(self, system: Optional[SystemProfile] = None,
                  network: Optional[NetworkProfile] = None,
                  ntp: Optional[NtpProfile] = None,
                  interfaces: Optional[Dict[str, InterfaceProfile]] = None,
                  global_policy: Optional[OpPolicy] = None,
-                 backend: Optional[BackendConfig] = None):
+                 backend: Optional[BackendConfig] = None,
+                 meta: Optional[MissionMeta] = None):
         self.system = system or SystemProfile()
         self.network = network or NetworkProfile()
         self.ntp = ntp or NtpProfile()
         self.interfaces: Dict[str, InterfaceProfile] = interfaces or {}
         self.global_policy = global_policy or OpPolicy()
         self.backend = backend or BackendConfig()
+        # Optional playbook provenance — present only when imported from a playbook
+        # that carried a `meta` block; never applied to the OS.
+        self.meta = meta
 
     @classmethod
     def from_dict(cls, state_dict: Optional[dict]) -> "OpProfile":
@@ -67,11 +72,12 @@ class OpProfile:
                 firewall_provider=be_data.get("firewall_provider", "auto"),
                 network_provider=be_data.get("network_provider", "auto"),
                 system_provider=be_data.get("system_provider", "auto"),
-            )
+            ),
+            meta=MissionMeta.from_dict(data["meta"]) if isinstance(data.get("meta"), dict) else None,
         )
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "system": self.system.to_dict(),
             "network": self.network.to_dict(),
             "ntp": self.ntp.to_dict(),
@@ -83,3 +89,7 @@ class OpProfile:
             },
             "backend": self.backend.to_dict(),
         }
+        # Only emit `meta` when present, so non-playbook sessions keep their shape.
+        if self.meta is not None:
+            data["meta"] = self.meta.to_dict()
+        return data

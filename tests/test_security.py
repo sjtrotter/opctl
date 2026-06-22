@@ -7,7 +7,7 @@ subprocess call or file write. Tests are organized by vulnerability class.
 import pytest
 from unittest.mock import MagicMock, mock_open, patch
 
-from opctl.infrastructure.validators import (
+from opctl.domain.services.validators import (
     validate_hostname, validate_mac, validate_ip,
     validate_dns, validate_interface, validate_port,
 )

@@ -163,8 +163,9 @@ into minimal CIDR sets.
 **Playbooks.** A `session.json` *is* the playbook format. Export the staged session to a shareable
 file with `write <file>` (e.g. `opctl write mission.json`) and load one back with `import <file>`
 (`opctl import mission.json`, or `import` at the shell root) — `import` replaces the staged session
-and the two round-trip. Import validates the playbook's structure (block shapes / zone lists);
-field-value validation is still planned.
+and the two round-trip. A playbook may carry an optional `meta` block (name/version/description),
+shown under the **Mission** section of `show`. Import validates the playbook (structure **and** field
+values) and fails loudly on anything invalid. See **[`PLAYBOOK.md`](PLAYBOOK.md)** for the full schema.
 
 ## Development
 
@@ -189,8 +190,10 @@ provider selection (`backend`); export/import of playbooks (`write` / `import`);
 diffing (`show`); and a transactional `execute` that commits to Linux and Windows hosts and rolls
 back on failure. Still being wired up:
 
-- Playbook **import validates structure, not field values** (blocks must be objects, policy zones
-  must be lists); field-level validation and a richer mission-frontmatter format are planned.
+- Playbook **import is fully validated** — structure *and* field values (hostnames, IPs/CIDRs, MACs,
+  enums, providers, firewall rules) — and fails loudly with a complete error list (see
+  [`PLAYBOOK.md`](PLAYBOOK.md)). A richer mission-frontmatter format (targets/constraints/restraints)
+  is still planned.
 - IPv6 firewalling is a no-op under the `iptables` provider specifically (use `firewalld`/`ufw` for
   IPv6 blocking).
 - NTP currently stages enable/disable only; setting the server/pool list is in progress.

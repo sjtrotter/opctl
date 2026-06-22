@@ -8,6 +8,8 @@ _SAFE_IFACE_RE = re.compile(r'^[a-zA-Z0-9_\-\.\ ]{1,64}$')
 
 
 def validate_hostname(hostname: str) -> str:
+    if not isinstance(hostname, str):
+        raise ValueError(f"Hostname must be a string: {hostname!r}")
     if not hostname or len(hostname) > 253:
         raise ValueError(f"Invalid hostname (empty or > 253 chars): {hostname!r}")
     labels = hostname.rstrip(".").split(".")
@@ -18,13 +20,15 @@ def validate_hostname(hostname: str) -> str:
 
 
 def validate_mac(mac: str) -> str:
-    if not _MAC_RE.match(mac):
+    if not isinstance(mac, str) or not _MAC_RE.match(mac):
         raise ValueError(f"Invalid MAC address: {mac!r}")
     return mac
 
 
 def validate_ip(ip: str) -> str:
     """Accept a bare IP or CIDR like '10.0.0.1/24'."""
+    if not isinstance(ip, str):
+        raise ValueError(f"IP address must be a string: {ip!r}")
     try:
         if "/" in ip:
             ipaddress.ip_network(ip, strict=False)
@@ -36,6 +40,9 @@ def validate_ip(ip: str) -> str:
 
 
 def validate_dns(dns: str) -> str:
+    # ipaddress.ip_address() accepts ints (123 -> 0.0.0.123), so guard the type first.
+    if not isinstance(dns, str):
+        raise ValueError(f"DNS server must be a string: {dns!r}")
     try:
         ipaddress.ip_address(dns)
     except ValueError:
@@ -44,7 +51,7 @@ def validate_dns(dns: str) -> str:
 
 
 def validate_interface(name: str) -> str:
-    if not name or not _SAFE_IFACE_RE.match(name):
+    if not isinstance(name, str) or not name or not _SAFE_IFACE_RE.match(name):
         raise ValueError(
             f"Invalid interface name {name!r}: must be 1-64 chars, "
             "alphanumeric, hyphens, underscores, dots, or spaces only"

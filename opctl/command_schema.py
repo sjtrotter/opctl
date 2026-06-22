@@ -6,6 +6,7 @@ from .use_cases.list_interfaces_uc import ListInterfacesUseCase
 from .use_cases.transfer_config_uc import ExportConfigUseCase, ImportConfigUseCase
 from .use_cases.remove_rule_uc import RemoveRuleUseCase
 from .domain.models.policy import OpPolicy
+from .domain.models.backend import BackendConfig
 
 # The master list of valid operational modes
 VALID_MODES = ["root", "configure", "system", "ntp", "policy", "interface", "backend"]
@@ -322,7 +323,7 @@ COMMAND_SCHEMA = {
     "firewall_provider": {
         "type": "setting",
         "category": "Backend",
-        "choices": ["auto", "iptables", "firewalld", "ufw", "powershell", "netsh"],
+        "choices": list(BackendConfig.VALID_PROVIDERS["firewall"]),
         "help": "Select the firewall provider ('auto' to detect)",
         "flags": ["--firewall-provider"],
         "handler": handle_config,
@@ -331,7 +332,7 @@ COMMAND_SCHEMA = {
     "network_provider": {
         "type": "setting",
         "category": "Backend",
-        "choices": ["auto", "iproute2", "nmcli", "ifconfig", "powershell", "netsh"],
+        "choices": list(BackendConfig.VALID_PROVIDERS["network"]),
         "help": "Select the network provider ('auto' to detect)",
         "flags": ["--network-provider"],
         "handler": handle_config,
@@ -340,7 +341,7 @@ COMMAND_SCHEMA = {
     "system_provider": {
         "type": "setting",
         "category": "Backend",
-        "choices": ["auto", "hostnamectl", "hostname", "powershell", "wmic"],
+        "choices": list(BackendConfig.VALID_PROVIDERS["system"]),
         "help": "Select the system/hostname provider ('auto' to detect)",
         "flags": ["--system-provider"],
         "handler": handle_config,
