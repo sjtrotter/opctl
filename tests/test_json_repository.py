@@ -1,8 +1,10 @@
 import json
 import os
+import sys
 import tempfile
+from unittest.mock import patch
 import pytest
-from opctl.adapters.json_repository import JsonPolicyRepository
+from opctl.adapters.json_repository import JsonPolicyRepository, SessionLockError
 
 
 class TestJsonPolicyRepository:
@@ -61,3 +63,75 @@ class TestJsonPolicyRepository:
             assert repo.load_state() == {}
         finally:
             os.unlink(path)
+
+    def test_atomic_write_leaves_no_temp_file(self):
+        path = self._tmp_path()
+        try:
+            JsonPolicyRepository(path).save_state({"a": 1})
+            directory = os.path.dirname(path) or "."
+            assert [n for n in os.listdir(directory) if n.startswith(".session-")] == []
+        finally:
+            for n in (path, path + ".lock"):
+                if os.path.exists(n):
+                    os.unlink(n)
+
+    def test_lock_released_between_saves(self):
+        path = self._tmp_path()
+        try:
+            repo = JsonPolicyRepository(path)
+            repo.save_state({"a": 1})
+            repo.save_state({"a": 2})   # must not deadlock or fail on the second write
+            assert repo.load_state() == {"a": 2}
+        finally:
+            for n in (path, path + ".lock"):
+                if os.path.exists(n):
+                    os.unlink(n)
+
+    def test_failed_write_keeps_original_and_cleans_temp(self):
+        # The durability guarantee: a crash mid-write leaves the prior file intact
+        # and removes the temp file.
+        path = self._tmp_path()
+        try:
+            repo = JsonPolicyRepository(path)
+            repo.save_state({"a": 1})
+            with patch("opctl.adapters.json_repository.os.replace", side_effect=OSError("boom")):
+                with pytest.raises(OSError):
+                    repo.save_state({"a": 2})
+            assert repo.load_state() == {"a": 1}          # original untouched
+            directory = os.path.dirname(path) or "."
+            assert [n for n in os.listdir(directory) if n.startswith(".session-")] == []
+        finally:
+            for n in (path, path + ".lock"):
+                if os.path.exists(n):
+                    os.unlink(n)
+
+    def test_lock_released_after_failed_write(self):
+        path = self._tmp_path()
+        try:
+            repo = JsonPolicyRepository(path)
+            with patch("opctl.adapters.json_repository.os.replace", side_effect=OSError("boom")):
+                with pytest.raises(OSError):
+                    repo.save_state({"a": 1})
+            repo.save_state({"a": 2})                       # lock was released despite the failure
+            assert repo.load_state() == {"a": 2}
+        finally:
+            for n in (path, path + ".lock"):
+                if os.path.exists(n):
+                    os.unlink(n)
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX fcntl flock test")
+    def test_save_state_fails_fast_when_locked(self):
+        import fcntl
+        path = self._tmp_path()
+        lock_path = path + ".lock"
+        holder = open(lock_path, "a+")
+        try:
+            fcntl.flock(holder.fileno(), fcntl.LOCK_EX)
+            with pytest.raises(SessionLockError):
+                JsonPolicyRepository(path).save_state({"a": 1})
+        finally:
+            fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+            holder.close()
+            for n in (path, lock_path):
+                if os.path.exists(n):
+                    os.unlink(n)
