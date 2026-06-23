@@ -168,6 +168,19 @@ class TestOpctlShellModes:
             _cleanup(path)
 
 
+    def test_gateway_stages_into_interface(self):
+        # Regression: the gateway must be settable from the shell (config-if mode),
+        # not only via playbook import. The schema entry wires do_gateway end-to-end.
+        shell, path = _make_shell()
+        try:
+            shell.do_configure("")
+            shell.do_interface("eth0")
+            shell.do_gateway("10.10.0.1")
+            assert shell.repo.load_state()["interfaces"]["eth0"]["gateway"] == "10.10.0.1"
+        finally:
+            _cleanup(path)
+
+
 class TestShellFirewallRules:
 
     def test_no_removes_global_rule(self):

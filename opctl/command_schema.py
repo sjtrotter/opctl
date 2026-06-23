@@ -242,6 +242,14 @@ COMMAND_SCHEMA = {
         "handler": handle_config,
         "valid_modes": ["interface"]
     },
+    "gateway": {
+        "type": "setting",
+        "category": "Settings",
+        "help": "Set the default gateway (a bare next-hop IP)",
+        "flags": ["--gateway", "-g"],
+        "handler": handle_config,
+        "valid_modes": ["interface"]
+    },
     "mac": {
         "type": "setting",
         "category": "Settings",
