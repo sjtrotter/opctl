@@ -40,7 +40,10 @@ class INetworkAdapter(ABC):
     
     @abstractmethod
     def configure_dhcp(self, interface: str) -> None: pass
-        
+
+    @abstractmethod
+    def flush_addresses(self, interface: str) -> None: pass
+
     @abstractmethod
     def get_ip_address(self, interface: str) -> str: pass
 

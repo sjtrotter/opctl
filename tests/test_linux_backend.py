@@ -37,6 +37,11 @@ class TestLinuxBackendDelegation:
         backend.configure_dhcp("eth0")
         net_p.configure_dhcp.assert_called_once_with("eth0")
 
+    def test_flush_addresses_delegates_to_network_provider(self):
+        backend, _, net_p, _ = _make_backend()
+        backend.flush_addresses("eth0")
+        net_p.flush_addresses.assert_called_once_with("eth0")
+
     def test_get_available_interfaces_delegates_to_network_provider(self):
         backend, _, net_p, _ = _make_backend()
         net_p.get_available_interfaces.return_value = ["eth0", "wlan0"]

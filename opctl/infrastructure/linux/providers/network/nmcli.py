@@ -59,6 +59,13 @@ class NmcliProvider(LinuxProvider, INetworkAdapter, IProvider):
         self._run(["nmcli", "connection", "modify", interface, "ipv4.method", "auto"])
         self._run(["nmcli", "connection", "up", interface])
 
+    def flush_addresses(self, interface: str) -> None:
+        self.validate_interface(interface)
+        self._run(["nmcli", "connection", "modify", interface,
+                   "ipv4.method", "disabled",
+                   "ipv4.addresses", "", "ipv4.gateway", "", "ipv4.dns", ""])
+        self._run(["nmcli", "connection", "up", interface])
+
     def get_ip_address(self, interface: str) -> str:
         try:
             output = self._run(["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show", interface])

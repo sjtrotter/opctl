@@ -70,6 +70,11 @@ class NetshNetworkProvider(WindowsProvider, INetworkAdapter, IProvider):
         self._run_cmd(f'netsh interface ip set address name="{interface}" dhcp')
         self._run_cmd(f'netsh interface ip set dns name="{interface}" dhcp')
 
+    def flush_addresses(self, interface: str) -> None:
+        self.validate_interface(interface)
+        self._run_cmd(f'netsh interface ipv4 delete address name="{interface}" all')
+        self._run_cmd(f'netsh interface ip set dns name="{interface}" dhcp')
+
     def get_ip_address(self, interface: str) -> str:
         try:
             self.validate_interface(interface)

@@ -38,6 +38,11 @@ class TestWindowsBackendDelegation:
         backend.configure_dhcp("Ethernet")
         net_p.configure_dhcp.assert_called_once_with("Ethernet")
 
+    def test_flush_addresses_delegates_to_network_provider(self):
+        backend, _, net_p, _ = _make_backend()
+        backend.flush_addresses("Ethernet")
+        net_p.flush_addresses.assert_called_once_with("Ethernet")
+
     def test_get_available_interfaces_delegates_to_network_provider(self):
         backend, _, net_p, _ = _make_backend()
         net_p.get_available_interfaces.return_value = ["Ethernet", "Wi-Fi"]
