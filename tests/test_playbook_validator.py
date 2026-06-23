@@ -89,6 +89,14 @@ class TestPlaybookValidator:
     def test_default_gateway_validated(self):
         assert any("default_gateway" in e for e in validate_playbook({"network": {"default_gateway": "notanip"}}))
 
+    def test_default_gateway_cidr_rejected(self):
+        # A next-hop gateway must be a bare host, not a CIDR.
+        assert any("default_gateway" in e for e in validate_playbook({"network": {"default_gateway": "10.0.0.1/24"}}))
+
+    def test_interface_gateway_cidr_rejected(self):
+        errors = validate_playbook({"interfaces": {"eth0": {"gateway": "10.10.0.1/24"}}})
+        assert any("eth0' gateway" in e for e in errors)
+
     def test_ipv4_dash_and_splat_rules_valid(self):
         assert validate_playbook({"global_policy": {
             "trusted": ["192.168.0-5.10", "192.168.*.10:443"], "target": [], "excluded": []}}) == []

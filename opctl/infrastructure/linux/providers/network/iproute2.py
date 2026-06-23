@@ -41,7 +41,7 @@ class Iproute2Provider(LinuxProvider, INetworkAdapter, IProvider):
         self.validate_interface(interface)
         self.validate_ip(ip)
         if gateway:
-            self.validate_ip(gateway)
+            self.validate_gateway(gateway)
         for dns in dns_servers:
             self.validate_dns(dns)
         self._run(["ip", "addr", "flush", "dev", interface])

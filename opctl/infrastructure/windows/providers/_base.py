@@ -1,6 +1,6 @@
 import subprocess
 from opctl.domain.services.validators import (
-    validate_hostname, validate_mac, validate_ip,
+    validate_hostname, validate_mac, validate_ip, validate_gateway,
     validate_dns, validate_interface, validate_port, validate_ntp_server,
 )
 
@@ -10,6 +10,7 @@ class WindowsProvider:
     validate_hostname = staticmethod(validate_hostname)
     validate_mac = staticmethod(validate_mac)
     validate_ip = staticmethod(validate_ip)
+    validate_gateway = staticmethod(validate_gateway)
     validate_dns = staticmethod(validate_dns)
     validate_interface = staticmethod(validate_interface)
     validate_port = staticmethod(validate_port)

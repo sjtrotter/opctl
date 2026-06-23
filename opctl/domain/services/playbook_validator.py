@@ -9,8 +9,8 @@ with a complete, fixable error list.
 from typing import List
 
 from opctl.domain.services.validators import (
-    validate_hostname, validate_mac, validate_ip, validate_dns, validate_interface,
-    validate_ntp_server,
+    validate_hostname, validate_mac, validate_ip, validate_gateway, validate_dns,
+    validate_interface, validate_ntp_server,
 )
 from opctl.domain.services.ip_parser import IPParser
 from opctl.domain.models.policy import OpPolicy
@@ -45,7 +45,7 @@ def validate_playbook(data: dict) -> List[str]:
     for dns in network.get("global_dns", []):
         check(validate_dns, dns, "network.global_dns")
     if network.get("default_gateway"):
-        check(validate_ip, network["default_gateway"], "network.default_gateway")
+        check(validate_gateway, network["default_gateway"], "network.default_gateway")
 
     for srv in data.get("ntp", {}).get("servers", []):
         if not _is_host_or_ip(srv):
@@ -71,7 +71,7 @@ def validate_playbook(data: dict) -> List[str]:
         for ip in iface.get("ip_addresses", []):
             check(validate_ip, ip, f"interface '{name}' ip_addresses")
         if iface.get("gateway"):
-            check(validate_ip, iface["gateway"], f"interface '{name}' gateway")
+            check(validate_gateway, iface["gateway"], f"interface '{name}' gateway")
         for dns in iface.get("dns_servers", []):
             check(validate_dns, dns, f"interface '{name}' dns_servers")
         errors.extend(_validate_zones(iface.get("policy", {}), f"interface '{name}' policy"))
