@@ -47,6 +47,10 @@ class Iproute2Provider(LinuxProvider, INetworkAdapter, IProvider):
         self._run(["ip", "addr", "flush", "dev", interface])
         self._run(["ip", "addr", "add", ip, "dev", interface])
         if gateway:
+            # The link must be up for the connected route to exist, otherwise the
+            # gateway nexthop is unreachable and "ip route add default" fails with
+            # "Nexthop has invalid gateway". Idempotent with the commit link-up step.
+            self._run(["ip", "link", "set", interface, "up"])
             self._run(["ip", "route", "add", "default", "via", gateway, "dev", interface])
         if dns_servers:
             with open("/etc/resolv.conf", "w") as f:

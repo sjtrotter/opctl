@@ -81,12 +81,24 @@ class TestIproute2Provider:
         calls = [c[0][0] for c in p._run.call_args_list]
         assert ["ip", "route", "add", "default", "via", "10.0.0.1", "dev", "eth0"] in calls
 
+    def test_configure_static_brings_link_up_before_adding_gateway(self):
+        # The gateway nexthop is unreachable while the link is down (issue #50),
+        # so the link must be set up before "ip route add default".
+        p = _mock_run(Iproute2Provider)
+        with patch("builtins.open", mock_open()):
+            p.configure_static("eth0", "10.0.0.1/24", "10.0.0.254", [])
+        calls = [c[0][0] for c in p._run.call_args_list]
+        link_up = calls.index(["ip", "link", "set", "eth0", "up"])
+        route_add = calls.index(["ip", "route", "add", "default", "via", "10.0.0.254", "dev", "eth0"])
+        assert link_up < route_add
+
     def test_configure_static_skips_gateway_when_empty(self):
         p = _mock_run(Iproute2Provider)
         with patch("builtins.open", mock_open()):
             p.configure_static("eth0", "10.0.0.1/24", "", [])
         calls = [c[0][0] for c in p._run.call_args_list]
         assert not any("route" in c for c in calls)
+        assert ["ip", "link", "set", "eth0", "up"] not in calls
 
     def test_configure_static_writes_resolv_conf(self):
         p = _mock_run(Iproute2Provider)
@@ -145,6 +157,17 @@ class TestIfconfigProvider:
             p.configure_static("eth0", "10.0.0.1/16", "", [])
         cmd = p._run.call_args_list[0][0][0]
         assert "255.255.0.0" in cmd
+
+    def test_configure_static_brings_link_up_before_adding_gateway(self):
+        # ifconfig brings the link up as part of the address command, so the
+        # default route's nexthop is reachable when "route add default" runs (#50).
+        p = _mock_run(IfconfigProvider)
+        with patch("builtins.open", mock_open()):
+            p.configure_static("eth0", "10.0.0.1/24", "10.0.0.254", [])
+        calls = [c[0][0] for c in p._run.call_args_list]
+        link_up = next(i for i, c in enumerate(calls) if c[0] == "ifconfig" and c[-1] == "up")
+        route_add = calls.index(["route", "add", "default", "gw", "10.0.0.254"])
+        assert link_up < route_add
 
     def test_configure_dhcp_calls_dhclient(self):
         p = _mock_run(IfconfigProvider)
