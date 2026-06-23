@@ -124,9 +124,11 @@ class ViewStatusUseCase:
             lp = iface_profile.policy.compile(IPParser.parse)
 
             iface_fields = {
+                # No INetworkAdapter read for live link state, so this is staged-only:
+                # report the intent without claiming an unverifiable match.
                 "Admin State": self._field(
-                    "Up" if iface_profile.enabled else "Down", "Up",
-                    comparable=True, present=True, match=iface_profile.enabled,
+                    "Up" if iface_profile.enabled else "Down", "N/A",
+                    comparable=False, present=True,
                 ),
                 "Mode": self._field(
                     iface_profile.mode.upper(), "DHCP" if os_is_dhcp else "STATIC",
