@@ -322,6 +322,60 @@ class TestCommitPolicyUseCase:
         finally:
             _cleanup(path)
 
+    def test_rollback_flushes_address_when_iface_had_no_ip(self):
+        # Mirrors the real-VM bug: configure_static partially applies (ip addr add
+        # succeeds) then fails at the gateway step. The interface had no IP before the
+        # commit, so neither restore branch fires for its no-IP snapshot — the flush is
+        # the only thing that removes the half-applied, opctl-added address.
+        state = {
+            "interfaces": {"eth0": {
+                "mode": "static", "ip_addresses": ["10.99.0.5/24"], "gateway": "10.99.0.1",
+                "dns_servers": [], "enabled": True,
+            }},
+        }
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        # Pre-commit snapshot of a previously-unconfigured interface.
+        net_m.get_ip_address.return_value = "Unassigned"
+        net_m.is_dhcp_enabled.return_value = False
+        net_m.get_mac_address.return_value = "Unknown"
+        net_m.configure_static.side_effect = RuntimeError("gateway unreachable")
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert report.success is False
+            assert report.rolled_back is True
+            # The restore flushed the address opctl had applied...
+            net_m.flush_addresses.assert_called_once_with("eth0")
+            # ...and did NOT re-apply addressing (the snapshot had no IP and no DHCP).
+            net_m.configure_dhcp.assert_not_called()
+        finally:
+            _cleanup(path)
+
+    def test_rollback_tolerates_flush_address_failure(self):
+        # The address flush during restore is best-effort: an adapter error must not
+        # abort the rest of the rollback step (the snapshot restore still completes).
+        state = {
+            "interfaces": {"eth0": {
+                "mode": "static", "ip_addresses": ["10.99.0.5/24"], "gateway": "10.99.0.1",
+                "dns_servers": [], "enabled": True,
+            }},
+        }
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        net_m.get_ip_address.return_value = "Unassigned"
+        net_m.is_dhcp_enabled.return_value = False
+        net_m.get_mac_address.return_value = "Unknown"
+        net_m.configure_static.side_effect = RuntimeError("gateway unreachable")
+        net_m.flush_addresses.side_effect = RuntimeError("flush unsupported")
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert report.rolled_back is True
+            # Despite the flush error, the restore step is reported as completed.
+            assert any(s.status == "ok" and "restore eth0" in s.name
+                       for s in report.rollback_steps)
+        finally:
+            _cleanup(path)
+
     def test_steps_after_failure_are_skipped(self):
         repo, path = _tmp_repo({"system": {"hostname": "tgt-box"}})
         sys_m, net_m, fw_m = self._make_adapters()

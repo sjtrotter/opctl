@@ -230,6 +230,14 @@ class CommitPolicyUseCase:
     def _restore_iface(self, iname: str, snapshot: dict) -> None:
         """Best-effort restore of an interface to its pre-commit snapshot."""
         self.net_os.set_link_state(iname, "down")
+        # Clear any address opctl applied first, so an interface that had no IP
+        # before the commit is genuinely returned to no IP. Neither restore
+        # branch below fires for a no-IP snapshot, so without this flush a
+        # half-applied address from a partial configure_static would survive.
+        try:
+            self.net_os.flush_addresses(iname)
+        except Exception:
+            pass
         if snapshot.get("dhcp"):
             self.net_os.configure_dhcp(iname)
         elif snapshot.get("ip") and snapshot["ip"] not in ("Unassigned", "N/A", "Unknown"):

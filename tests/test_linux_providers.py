@@ -114,6 +114,11 @@ class TestIproute2Provider:
         calls = [c[0][0] for c in p._run.call_args_list]
         assert ["dhclient", "eth0"] in calls
 
+    def test_flush_addresses_flushes_without_reconfiguring(self):
+        p = _mock_run(Iproute2Provider)
+        p.flush_addresses("eth0")
+        p._run.assert_called_once_with(["ip", "addr", "flush", "dev", "eth0"])
+
     def test_set_link_state_up(self):
         p = _mock_run(Iproute2Provider)
         p.set_link_state("eth0", "up")

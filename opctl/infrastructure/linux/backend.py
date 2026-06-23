@@ -59,6 +59,9 @@ class LinuxBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter, INtpAdapte
     def configure_dhcp(self, interface: str) -> None:
         self._network.configure_dhcp(interface)
 
+    def flush_addresses(self, interface: str) -> None:
+        self._network.flush_addresses(interface)
+
     def get_ip_address(self, interface: str) -> str:
         return self._network.get_ip_address(interface)
 

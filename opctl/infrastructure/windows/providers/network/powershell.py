@@ -64,6 +64,15 @@ class PowerShellNetworkProvider(WindowsProvider, INetworkAdapter, IProvider):
         self._run_ps(f'Set-DnsClientServerAddress -InterfaceAlias "{interface}" '
                      f'-ResetServerAddresses')
 
+    def flush_addresses(self, interface: str) -> None:
+        self.validate_interface(interface)
+        self._run_ps(f'Remove-NetIPAddress -InterfaceAlias "{interface}" -Confirm:$false '
+                     f'-ErrorAction SilentlyContinue')
+        self._run_ps(f'Remove-NetRoute -InterfaceAlias "{interface}" -Confirm:$false '
+                     f'-ErrorAction SilentlyContinue')
+        self._run_ps(f'Set-DnsClientServerAddress -InterfaceAlias "{interface}" '
+                     f'-ResetServerAddresses')
+
     def get_ip_address(self, interface: str) -> str:
         try:
             self.validate_interface(interface)
