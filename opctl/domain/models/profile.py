@@ -29,27 +29,35 @@ class OpProfile:
 
     @classmethod
     def from_dict(cls, state_dict: Optional[dict]) -> "OpProfile":
-        data = state_dict or {}
-        
+        # Tolerate garbage (a corrupt-but-valid-JSON session.json must self-heal,
+        # not crash startup): guard every container before iterating/.get-ing it.
+        data = state_dict if isinstance(state_dict, dict) else {}
+
+        def _block(key):
+            block = data.get(key, {})
+            return block if isinstance(block, dict) else {}
+
         # 1. Hydrate Global Policy
         global_policy = OpPolicy()
-        pol_data = data.get("global_policy", {})
+        pol_data = _block("global_policy")
         for zone in OpPolicy.ZONES:
-            for rule in pol_data.get(zone, []):
-                global_policy.add_rule(zone, rule)
+            rules = pol_data.get(zone, [])
+            if isinstance(rules, list):
+                for rule in rules:
+                    global_policy.add_rule(zone, rule)
 
-        # 2. Hydrate Dictionary of Interfaces
+        # 2. Hydrate Dictionary of Interfaces (the dict key is the authoritative
+        #    name; pass it without mutating the caller's input dict)
         interfaces = {}
-        ifaces_data = data.get("interfaces", {})
-        for iface_name, iface_dict in ifaces_data.items():
-            iface_dict["name"] = iface_name 
-            interfaces[iface_name] = InterfaceProfile.from_dict(iface_dict)
+        for iface_name, iface_dict in _block("interfaces").items():
+            if isinstance(iface_dict, dict):
+                interfaces[iface_name] = InterfaceProfile.from_dict({**iface_dict, "name": iface_name})
 
         # 3. Hydrate Sub-Profiles safely using dict.get() defaults
-        sys_data = data.get("system", {})
-        net_data = data.get("network", {})
-        ntp_data = data.get("ntp", {})
-        be_data = data.get("backend", {})
+        sys_data = _block("system")
+        net_data = _block("network")
+        ntp_data = _block("ntp")
+        be_data = _block("backend")
 
         return cls(
             system=SystemProfile(

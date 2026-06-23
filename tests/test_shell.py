@@ -153,6 +153,20 @@ class TestOpctlShellModes:
         finally:
             _cleanup(path)
 
+    def test_precmd_flags_ambiguous_prefix(self, capsys):
+        # In configure mode 's' is a prefix of both 'system' and 'show'. Rather than
+        # silently expanding to one, precmd must report the ambiguity and no-op.
+        shell, path = _make_shell()
+        try:
+            shell.do_configure("")
+            resolved = shell.precmd("s")
+            assert resolved == ""
+            out = capsys.readouterr().out
+            assert "Ambiguous" in out
+            assert "show" in out and "system" in out
+        finally:
+            _cleanup(path)
+
 
 class TestShellFirewallRules:
 

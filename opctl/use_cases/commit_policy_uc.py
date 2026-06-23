@@ -6,6 +6,7 @@ from opctl.domain.interfaces import (
     IPolicyRepository, ISystemAdapter, INetworkAdapter, IFirewallAdapter, INtpAdapter,
 )
 from opctl.domain.services.ip_parser import IPParser
+from opctl.domain.services.validators import validate_ip, validate_port, validate_interface
 
 
 @dataclass
@@ -183,6 +184,11 @@ class CommitPolicyUseCase:
     # --- helpers ---------------------------------------------------------
 
     def _apply_policy(self, pol: dict, interface: Optional[str]) -> None:
+        # CIDRs are already compiled to real networks, but port overrides ("IP:PORT")
+        # and the interface reach the providers raw — and Windows firewall providers
+        # build shell=True command strings. Validate them here (inside the tracked
+        # step, so bad input fails the commit) to close that injection surface.
+        self._validate_fw_inputs(pol, interface)
         self.fw_os.apply_ipv4_blocks(pol["v4"]["blocked"], pol["v4"]["port_blocks"], interface)
         self.fw_os.apply_ipv6_blocks(pol["v6"]["blocked"], pol["v6"]["port_blocks"], interface)
         self.fw_os.apply_ipv4_allows(pol["v4"]["targets"] + pol["v4"]["trusted"], pol["v4"]["port_allows"], interface)
@@ -190,8 +196,19 @@ class CommitPolicyUseCase:
 
     def _isolate(self, interface: str) -> None:
         """Default-deny: block all egress on an unmanaged interface (v4 + v6)."""
+        validate_interface(interface)
         self.fw_os.apply_ipv4_blocks(["0.0.0.0/0"], [], interface)
         self.fw_os.apply_ipv6_blocks(["::/0"], [], interface)
+
+    @staticmethod
+    def _validate_fw_inputs(pol: dict, interface: Optional[str]) -> None:
+        if interface is not None:
+            validate_interface(interface)
+        for fam in ("v4", "v6"):
+            for entry in pol[fam]["port_blocks"] + pol[fam]["port_allows"]:
+                host, _, port = entry.rpartition(":")
+                validate_ip(host.strip("[]"))
+                validate_port(port)
 
     @staticmethod
     def _capture(getter: Callable, *args):

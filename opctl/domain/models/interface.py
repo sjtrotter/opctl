@@ -24,9 +24,12 @@ class InterfaceProfile:
     def from_dict(cls, data: dict) -> "InterfaceProfile":
         local_policy = OpPolicy()
         pol_data = data.get("policy", {})
-        for zone in OpPolicy.ZONES:
-            for rule in pol_data.get(zone, []):
-                local_policy.add_rule(zone, rule)
+        if isinstance(pol_data, dict):
+            for zone in OpPolicy.ZONES:
+                rules = pol_data.get(zone, [])
+                if isinstance(rules, list):
+                    for rule in rules:
+                        local_policy.add_rule(zone, rule)
 
         return cls(
             name=data.get("name", ""),

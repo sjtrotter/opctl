@@ -142,7 +142,9 @@ class ViewStatusUseCase:
                     ",".join(staged_ips) if staged_ips else "DHCP",
                     f"DHCP ({live_ip})" if (intent_is_dhcp and os_is_dhcp) else live_ip,
                     comparable=True, present=True,
-                    match=mode_match if intent_is_dhcp else (live_ip in staged_ips if staged_ips else False),
+                    # live_ip is bare (no prefix); strip the staged CIDRs before comparing.
+                    match=mode_match if intent_is_dhcp
+                    else any(ip.split("/")[0] == live_ip for ip in staged_ips),
                 ),
                 "Gateway": self._field(
                     iface_profile.gateway or "DHCP",

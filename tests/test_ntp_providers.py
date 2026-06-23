@@ -132,11 +132,12 @@ class TestChronyProvider:
 
     def test_ensure_sourcedir_appends_when_absent(self):
         p = _linux(ChronyProvider)
-        m = mock_open(read_data="server pool.example\n")
-        with patch("builtins.open", m):
+        with patch("builtins.open", mock_open(read_data="server pool.example\n")):
             assert p._ensure_sourcedir() is True
-        written = "".join(c.args[0] for c in m().write.call_args_list)
-        assert "sourcedir /etc/chrony/sources.d" in written
+        path, content = p._atomic_write.call_args[0][:2]
+        assert path == "/etc/chrony.conf"
+        assert "sourcedir /etc/chrony/sources.d" in content
+        assert "server pool.example" in content   # existing config preserved
 
     def test_rejects_bad_server(self):
         p = _linux(ChronyProvider)

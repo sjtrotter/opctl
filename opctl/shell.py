@@ -34,12 +34,17 @@ class OpctlShell(cmd.Cmd):
 
         valid_cmds = [name for name, cfg in COMMAND_SCHEMA.items() if self.current_mode in cfg.get("valid_modes", [])]
         matches = [c for c in valid_cmds if c.startswith(cmd_word)]
-        
+
         if len(matches) == 1:
             parts[0] = matches[0]
-            return " ".join(parts)
-            
+        elif len(matches) > 1 and cmd_word not in self.alias_map:
+            print(f"[!] Ambiguous command '{cmd_word}': {', '.join(sorted(matches))}")
+            return ""  # no-op (see emptyline)
+
         return " ".join(parts)
+
+    def emptyline(self):
+        return False  # blank input is a no-op (don't repeat the last command)
 
     def onecmd(self, line: str):
         try:

@@ -106,8 +106,7 @@ def main():
             else:
                 fallback_handler = COMMAND_SCHEMA["hostname"].get("handler")
                 if fallback_handler:
-                    fallback_handler(repo, os_adapter, payload)
-                    print(f"[*] Configuration staged successfully.")
+                    fallback_handler(repo, os_adapter, payload)  # prints its own confirmation
                 else:
                     print("[!] Error: No valid handler found in schema.")
         else:

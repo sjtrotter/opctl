@@ -68,6 +68,6 @@ class ChronyProvider(LinuxProvider, INtpAdapter, IProvider):
             conf = ""
         if any(line.strip() == _SOURCEDIR_LINE for line in conf.splitlines()):
             return False
-        with open(_CHRONY_CONF, "a") as f:
-            f.write(f"\n# Added by opctl\n{_SOURCEDIR_LINE}\n")
+        # Append atomically (read-all + rewrite) so a crash can't corrupt chrony.conf.
+        self._atomic_write(_CHRONY_CONF, conf.rstrip("\n") + f"\n\n# Added by opctl\n{_SOURCEDIR_LINE}\n")
         return True

@@ -64,6 +64,21 @@ class TestJsonPolicyRepository:
         finally:
             os.unlink(path)
 
+    def test_load_returns_empty_dict_on_non_dict_json(self):
+        """Valid JSON that isn't an object (a list, a scalar) must normalize to {}.
+
+        Downstream OpProfile.from_dict assumes a mapping; a top-level list would
+        otherwise crash callers with an AttributeError on .get().
+        """
+        path = self._tmp_path()
+        try:
+            with open(path, "w") as f:
+                f.write("[1, 2, 3]")
+            repo = JsonPolicyRepository(path)
+            assert repo.load_state() == {}
+        finally:
+            os.unlink(path)
+
     def test_atomic_write_leaves_no_temp_file(self):
         path = self._tmp_path()
         try:
