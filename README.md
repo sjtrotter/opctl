@@ -69,6 +69,7 @@ opctl(config-system)# exit
 opctl(config)# interface eth0                  # configure NIC eth0
 opctl(config-if:eth0)# mode static
 opctl(config-if:eth0)# ip 10.10.0.5/24
+opctl(config-if:eth0)# gateway 10.10.0.1       # default next-hop (bare IP, no prefix)
 opctl(config-if:eth0)# mac random              # spoof a random MAC
 opctl(config-if:eth0)# dns 1.1.1.1 9.9.9.9
 opctl(config-if:eth0)# exit
@@ -93,7 +94,7 @@ The same operations are available non-interactively:
 
 ```bash
 opctl system --hostname recon-01                            # stage the hostname
-opctl interface eth0 --mode static --ip 10.10.0.5/24 --mac random   # configure a NIC
+opctl interface eth0 --mode static --ip 10.10.0.5/24 --gateway 10.10.0.1 --mac random   # configure a NIC
 opctl policy --target 192.168.50.0/24 --excluded 192.168.50.13      # global firewall zones
 opctl show                                                  # show the staged-vs-live diff
 opctl execute                                               # commit to the OS (run with sudo / as admin)

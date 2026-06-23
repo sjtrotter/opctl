@@ -64,6 +64,14 @@ class TestCliParser:
         args = self.parser.parse_args(["interface", "eth0", "--mode", "dhcp"])
         assert args.mode == "dhcp"
 
+    def test_interface_gateway_flag(self):
+        args = self.parser.parse_args(["interface", "eth0", "--gateway", "10.0.0.1"])
+        assert args.gateway == "10.0.0.1"
+
+    def test_interface_gateway_short_flag(self):
+        args = self.parser.parse_args(["interface", "eth0", "-g", "10.0.0.1"])
+        assert args.gateway == "10.0.0.1"
+
     def test_interface_enable_flag(self):
         args = self.parser.parse_args(["interface", "eth0", "--enable"])
         assert args.enable is True
