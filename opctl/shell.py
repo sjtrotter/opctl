@@ -52,6 +52,11 @@ class OpctlShell(cmd.Cmd):
         except SessionLockError as e:
             print(f"[!] {e}")
             return False
+        except (RuntimeError, ValueError) as e:
+            # A concern's backend is missing/misconfigured (resolved lazily on first
+            # use). Report it and keep the shell alive for other commands.
+            print(f"[!] {e}")
+            return False
 
     def default(self, line: str):
         cmd_word = line.split()[0]

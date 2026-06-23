@@ -114,6 +114,11 @@ def main():
     except SessionLockError as e:
         print(f"[!] {e}")
         sys.exit(1)
+    except (RuntimeError, ValueError) as e:
+        # A concern's backend is missing/misconfigured (resolved lazily on first use).
+        # Surface it cleanly instead of an unhandled traceback.
+        print(f"[!] {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

@@ -1,19 +1,23 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from opctl.infrastructure.windows.backend import WindowsBackend
 from opctl.domain.models.backend import BackendConfig
 
 
-def _make_backend(sys_p=None, net_p=None, fw_p=None):
-    """Build a WindowsBackend with mock providers injected via resolve_provider."""
-    sys_p = sys_p or MagicMock()
-    net_p = net_p or MagicMock()
-    fw_p = fw_p or MagicMock()
+def _make_backend(sys_p=None, net_p=None, fw_p=None, ntp_p=None):
+    """Build a WindowsBackend with mock providers injected into the lazy cache.
 
-    with patch("opctl.infrastructure.windows.backend.resolve_provider",
-               side_effect=[sys_p, net_p, fw_p, MagicMock()]):  # 4th = ntp (unused here)
-        backend = WindowsBackend(BackendConfig())
-
-    return backend, sys_p, net_p, fw_p
+    Providers resolve lazily per concern, so prime the resolution cache directly
+    rather than depend on resolve_provider call order.
+    """
+    providers = {
+        "system": sys_p or MagicMock(),
+        "network": net_p or MagicMock(),
+        "firewall": fw_p or MagicMock(),
+        "ntp": ntp_p or MagicMock(),
+    }
+    backend = WindowsBackend(BackendConfig())
+    backend._resolved = dict(providers)
+    return backend, providers["system"], providers["network"], providers["firewall"]
 
 
 class TestWindowsBackendDelegation:
@@ -75,8 +79,6 @@ class TestWindowsBackendDelegation:
 
     def test_set_servers_delegates_to_ntp_provider(self):
         ntp_p = MagicMock()
-        with patch("opctl.infrastructure.windows.backend.resolve_provider",
-                   side_effect=[MagicMock(), MagicMock(), MagicMock(), ntp_p]):
-            backend = WindowsBackend(BackendConfig())
+        backend, _, _, _ = _make_backend(ntp_p=ntp_p)
         backend.set_servers(["time.windows.com"], True)
         ntp_p.set_servers.assert_called_once_with(["time.windows.com"], True)
