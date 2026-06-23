@@ -18,8 +18,9 @@ Most network tooling applies changes the moment you type them. opctl follows a *
 model instead:
 
 1. **Stage** your intended configuration into `session.json` — nothing touches the hardware yet.
-2. **Review** the difference between your staged intent and the real OS state (`[ SYNC ]` /
-   `[ DIFF ]` per field).
+2. **Review** the difference between your staged intent and the real OS state — a diff-first
+   report that leads with **CHANGES** (`live -> staged`), then **IN SYNC**, then **STAGED**
+   (fields with no live equivalent), above a one-line tally.
 3. **Commit** the whole profile to the operating system in one explicit step.
 
 This makes changes reviewable and atomic-at-commit rather than applied piecemeal — useful when you
@@ -28,8 +29,8 @@ are reconfiguring a host's network posture and want to see the full delta before
 ## Features
 
 - **Hostname** management.
-- **Per-interface** configuration: MAC address (including `random`), static IPv4/IPv6 or DHCP, DNS,
-  and administrative up/down.
+- **Per-interface** configuration: MAC address (including `random`), static IPv4/IPv6 or DHCP,
+  default gateway, DNS, and administrative up/down.
 - **Zone-based egress firewall** — `trusted` / `target` (allow) and `excluded` (deny, overrides),
   compiled with real subnet algebra (exclusion + CIDR collapsing) for IPv4 and IPv6, with optional
   `IP:PORT` overrides.
