@@ -1,4 +1,5 @@
 import subprocess
+from typing import List
 from opctl.domain.services.validators import (
     validate_hostname, validate_mac, validate_ip, validate_gateway,
     validate_dns, validate_interface, validate_port, validate_ntp_server,
@@ -36,3 +37,14 @@ class WindowsProvider:
         except subprocess.CalledProcessError as e:
             error_msg = e.stderr.strip() or e.stdout.strip()
             raise RuntimeError(f"CMD error: {error_msg}\nCommand: {cmd}")
+
+    def _run_argv(self, cmd: List[str]) -> str:
+        """List-form runner (shell=False), so an argument can never be
+        re-parsed by cmd.exe. Use this whenever an element comes from OS
+        output rather than opctl-validated input."""
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            return result.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.strip() or e.stdout.strip()
+            raise RuntimeError(f"CMD error: {error_msg}\nCommand: {' '.join(cmd)}")

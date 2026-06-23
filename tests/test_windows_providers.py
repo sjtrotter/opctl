@@ -259,20 +259,42 @@ class TestNetshFirewallProvider:
 
     def test_flush_deletes_opctl_rules(self):
         p = _cmd_provider(NetshFirewallProvider)
-        p._run_cmd.side_effect = [
-            "Rule Name: opctl-v4drop-10.0.0.0/8\nDir: Out\n",
-            "",
-        ]
+        p._run_cmd.return_value = "Rule Name: opctl-v4drop-10.0.0.0/8\nDir: Out\n"
+        p._run_argv = MagicMock(return_value="")
         p.flush_managed_rules()
-        delete_call = p._run_cmd.call_args_list[1][0][0]
-        assert "delete rule" in delete_call
-        assert "opctl" in delete_call.lower()
+        argv = p._run_argv.call_args[0][0]
+        assert argv[:5] == ["netsh", "advfirewall", "firewall", "delete", "rule"]
+        assert "name=opctl-v4drop-10.0.0.0/8" in argv
 
     def test_flush_ignores_non_opctl_rules(self):
         p = _cmd_provider(NetshFirewallProvider)
         p._run_cmd.return_value = "Rule Name: SomeOtherRule\nDir: Out\n"
+        p._run_argv = MagicMock(return_value="")
         p.flush_managed_rules()
-        assert p._run_cmd.call_count == 1
+        p._run_argv.assert_not_called()
+
+    def test_flush_ignores_substring_only_opctl_rules(self):
+        # A foreign rule whose name merely contains "opctl" (not the opctl-
+        # prefix opctl creates) must never be selected for deletion.
+        p = _cmd_provider(NetshFirewallProvider)
+        p._run_cmd.return_value = "Rule Name: not-an-opctl-rule\nDir: Out\n"
+        p._run_argv = MagicMock(return_value="")
+        p.flush_managed_rules()
+        p._run_argv.assert_not_called()
+
+    def test_flush_passes_rule_name_as_single_argv_no_shell(self):
+        # A pre-existing rule whose name contains a double-quote and an
+        # ampersand must NOT be re-interpolated into a shell command; the raw
+        # name must arrive as a single, unparsed argv element.
+        evil = 'opctl-backup" & calc.exe & echo "'
+        p = _cmd_provider(NetshFirewallProvider)
+        p._run_cmd.return_value = f"Rule Name: {evil}\nDir: Out\n"
+        p._run_argv = MagicMock(return_value="")
+        p.flush_managed_rules()
+        argv = p._run_argv.call_args[0][0]
+        assert f"name={evil}" in argv
+        # The metacharacters live inside one argv element, never split by a shell.
+        assert sum("calc.exe" in part for part in argv) == 1
 
     def test_provider_name(self):
         assert NetshFirewallProvider.provider_name() == "netsh"

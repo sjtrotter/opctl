@@ -4,6 +4,7 @@ from opctl.domain.interfaces import IFirewallAdapter, IProvider
 from .._base import WindowsProvider
 
 _PREFIX = "opctl"
+_NAME_PREFIX = f"{_PREFIX}-"
 
 
 class NetshFirewallProvider(WindowsProvider, IFirewallAdapter, IProvider):
@@ -23,9 +24,16 @@ class NetshFirewallProvider(WindowsProvider, IFirewallAdapter, IProvider):
                 f'netsh advfirewall firewall show rule name=all dir=out verbose'
             )
             for line in output.splitlines():
-                if line.startswith("Rule Name:") and _PREFIX in line.lower():
-                    name = line.split(":", 1)[1].strip()
-                    self._run_cmd(f'netsh advfirewall firewall delete rule name="{name}" dir=out')
+                if not line.startswith("Rule Name:"):
+                    continue
+                name = line.split(":", 1)[1].strip()
+                # Only delete rules opctl created; the name comes from OS output,
+                # so pass it list-form (shell=False) to prevent re-parsing by cmd.exe.
+                if name.startswith(_NAME_PREFIX):
+                    self._run_argv([
+                        "netsh", "advfirewall", "firewall", "delete", "rule",
+                        f"name={name}", "dir=out",
+                    ])
         except RuntimeError:
             pass
 
