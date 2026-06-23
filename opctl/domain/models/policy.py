@@ -46,20 +46,26 @@ class OpPolicy:
         
         all_port_allows = port_trust + port_target
         
+        # A port rule is IPv6 iff it is bracketed (`[host]:port`); IPv4 otherwise.
+        # (Substring tests like `'.' in p` mis-bin IPv4-mapped IPv6 such as
+        # `[::ffff:1.2.3.4]:443`, which contains both '.' and ']', into both lists.)
+        def _is_v6(p):
+            return p.lstrip().startswith('[')
+
         return {
             "v4": {
                 "trusted": self._collapse(clean_trusted, 4),
                 "targets": self._collapse(clean_targets, 4),
                 "blocked": self._collapse(excluded_nets, 4),
-                "port_blocks": [p for p in port_exclude if '.' in p],
-                "port_allows": [p for p in all_port_allows if '.' in p]
+                "port_blocks": [p for p in port_exclude if not _is_v6(p)],
+                "port_allows": [p for p in all_port_allows if not _is_v6(p)]
             },
             "v6": {
                 "trusted": self._collapse(clean_trusted, 6),
                 "targets": self._collapse(clean_targets, 6),
                 "blocked": self._collapse(excluded_nets, 6),
-                "port_blocks": [p for p in port_exclude if ']' in p],
-                "port_allows": [p for p in all_port_allows if ']' in p]
+                "port_blocks": [p for p in port_exclude if _is_v6(p)],
+                "port_allows": [p for p in all_port_allows if _is_v6(p)]
             }
         }
 

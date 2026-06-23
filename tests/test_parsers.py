@@ -41,5 +41,32 @@ class TestIPParser(unittest.TestCase):
         with self.assertRaises(InvalidNetworkFormatError):
             IPParser.parse("192.168.50-10.0/24")
 
+    def test_rejects_full_splat_expansion_dos(self):
+        """A splat across all octets would expand to 2^32 networks: reject, don't hang."""
+        for s in ("*.*.*.*", "*.*.*.10", "10.*.*.*"):
+            with self.assertRaises(InvalidNetworkFormatError):
+                IPParser.parse(s)
+
+    def test_rejects_oversized_dash_range_expansion(self):
+        """A dash range whose product exceeds the cap is rejected before expansion."""
+        with self.assertRaises(InvalidNetworkFormatError):
+            IPParser.parse("0-255.0-255.0-255.10")
+
+    def test_rejects_leading_and_trailing_dots(self):
+        """Empty octets (leading/trailing/double dots) must not recurse or pass."""
+        for s in (".10.0.0.1", "10.0.0.1.", "10..0.1", "10.0.0.1.5"):
+            with self.assertRaises(InvalidNetworkFormatError):
+                IPParser.parse(s)
+
+    def test_rejects_deeply_nested_dots_without_recursion_error(self):
+        """A pathological dotted string is a clean domain error, not a RecursionError."""
+        with self.assertRaises(InvalidNetworkFormatError):
+            IPParser.parse("1." * 2000)
+
+    def test_single_splat_octet_still_expands(self):
+        """The cap must not break the common, bounded single-splat case."""
+        result = IPParser.parse("192.168.*.10")
+        self.assertEqual(len(result), 256)
+
 if __name__ == '__main__':
     unittest.main()

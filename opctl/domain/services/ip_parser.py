@@ -18,6 +18,10 @@ class IPv6Parser:
 
 class IPv4Parser:
     """Handles advanced cyber DSL (Splats, Dashes, CIDR) for IPv4."""
+
+    # Cap splat/dash expansion so a rule like `*.*.*.*` can't OOM the host.
+    _MAX_EXPANSION = 65536
+
     @staticmethod
     def parse(input_str: str) -> Set[ipaddress.IPv4Network]:
         try:
@@ -26,18 +30,38 @@ class IPv4Parser:
             else:
                 base, mask = input_str, "32"
 
-            expanded_bases = IPv4Parser._recursive_expand(base.split('.'))
-            final_nets = set()
-            
-            for b in expanded_bases:
-                final_nets.add(ipaddress.IPv4Network(f"{b}/{mask}", strict=False))
+            octets = base.split('.')
+            # An IPv4 address has exactly four non-empty octets. Checking this up
+            # front rejects malformed input (leading/trailing/extra dots) and bounds
+            # the recursion depth (a 1000-dot string can't blow the stack).
+            if len(octets) != 4 or any(o == "" for o in octets):
+                raise ValueError("an IPv4 address has exactly four octets")
+            if IPv4Parser._expansion_size(octets) > IPv4Parser._MAX_EXPANSION:
+                raise InvalidNetworkFormatError(
+                    input_str,
+                    f"splat/range expands past {IPv4Parser._MAX_EXPANSION} addresses; use a CIDR")
 
+            final_nets = {ipaddress.IPv4Network(f"{b}/{mask}", strict=False)
+                          for b in IPv4Parser._recursive_expand(octets)}
             if not final_nets:
                 raise InvalidNetworkFormatError(input_str, "Resulted in an empty network set.")
-                
             return final_nets
         except ValueError as e:
             raise InvalidNetworkFormatError(input_str, str(e))
+
+    @staticmethod
+    def _expansion_size(octets: List[str]) -> int:
+        size = 1
+        for o in octets:
+            if o == '*':
+                size *= 256
+            elif '-' in o:
+                try:
+                    start, end = map(int, o.split('-'))
+                    size *= max(1, end - start + 1)
+                except ValueError:
+                    pass  # malformed dash — let _recursive_expand raise the clear error
+        return size
 
     @staticmethod
     def _recursive_expand(octets: List[str]) -> List[str]:

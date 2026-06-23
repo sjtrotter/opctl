@@ -38,7 +38,10 @@ class JsonPolicyRepository(IPolicyRepository):
         if os.path.exists(self.file_path):
             try:
                 with open(self.file_path, "r") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                # A valid-JSON non-object (e.g. a list) is treated as corrupt — else
+                # OpProfile.from_dict would crash on every invocation.
+                return data if isinstance(data, dict) else {}
             except json.JSONDecodeError:
                 return {}  # corrupt or missing -> clean state (self-healed by from_dict)
         return {}

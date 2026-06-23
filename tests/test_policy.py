@@ -49,6 +49,19 @@ class TestOpPolicy(unittest.TestCase):
         self.assertIn("fe80::/10", result["v6"]["trusted"])
         self.assertEqual(len(result["v6"]["targets"]), 0)
 
+    def test_ipv4_mapped_port_rule_classified_as_v6_only(self):
+        """A bracketed IPv6 port override (incl. v4-mapped) must land in v6, not v4.
+
+        Classification keys on the leading '[' — a substring check on '.' would have
+        misfiled '[::ffff:1.2.3.4]:443' into the v4 bucket and emitted a bad rule there.
+        """
+        self.policy.add_rule("excluded", "[::ffff:1.2.3.4]:443")
+
+        result = self.policy.compile(IPParser.parse)
+
+        self.assertIn("[::ffff:1.2.3.4]:443", result["v6"]["port_blocks"])
+        self.assertEqual(result["v4"]["port_blocks"], [])
+
     def test_exclusion_larger_than_target(self):
         """Test if an operator accidentally excludes a massive block over a small target."""
         self.policy.add_rule("target", "192.168.1.50/32")

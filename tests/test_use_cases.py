@@ -258,6 +258,37 @@ class TestCommitPolicyUseCase:
         finally:
             _cleanup(path)
 
+    def test_rejects_injection_in_port_override(self):
+        # A port override carries its host raw to the (shell=True on Windows) provider.
+        # An invalid host must fail the tracked commit step, not reach the adapter.
+        state = {"global_policy": {"trusted": [], "target": [], "excluded": ["1.2.3.x:443"]}}
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert report.success is False
+            assert any(s.status == "failed" and "global policy" in s.name
+                       for s in report.steps)
+            fw_m.apply_ipv4_blocks.assert_not_called()
+        finally:
+            _cleanup(path)
+
+    def test_rejects_injection_in_interface_name(self):
+        # A crafted interface name reaching a local firewall rule must be rejected.
+        state = {"interfaces": {"eth0;rm -rf": {
+            "mode": "dhcp", "ip_addresses": [], "gateway": "", "dns_servers": [],
+            "enabled": True, "policy": {"excluded": ["10.0.0.1"]},
+        }}}
+        repo, path = _tmp_repo(state)
+        sys_m, net_m, fw_m = self._make_adapters()
+        try:
+            report = CommitPolicyUseCase(repo, sys_m, net_m, fw_m).execute()
+            assert report.success is False
+            assert any(s.status == "failed" and "local policy" in s.name
+                       for s in report.steps)
+        finally:
+            _cleanup(path)
+
     def test_successful_commit_reports_all_steps_ok(self):
         repo, path = _tmp_repo({"system": {"hostname": "tgt-box"}})
         sys_m, net_m, fw_m = self._make_adapters()
@@ -612,6 +643,30 @@ class TestViewStatusUseCase:
             _cleanup(path)
 
 
+    def test_static_ip_matches_live_despite_cidr_prefix(self):
+        # Staged IP carries a /prefix; the live OS value is bare. They must compare
+        # equal (synced), not diff forever on the suffix.
+        state = {"interfaces": {"eth0": {
+            "mode": "static", "ip_addresses": ["10.10.0.5/24"], "gateway": "10.10.0.1",
+            "dns_servers": [], "enabled": True,
+        }}}
+        repo, path = _tmp_repo(state)
+        sys_m = MagicMock()
+        sys_m.get_hostname.return_value = "ubuntu"
+        net_m = MagicMock()
+        net_m.get_available_interfaces.return_value = ["eth0"]
+        net_m.get_ip_address.return_value = "10.10.0.5"
+        net_m.get_mac_address.return_value = "N/A"
+        net_m.get_gateway.return_value = "10.10.0.1"
+        net_m.is_dhcp_enabled.return_value = False
+        net_m.get_dns_servers.return_value = []
+        try:
+            data = ViewStatusUseCase(repo, sys_m, net_m).execute()
+            assert data["Interfaces"]["eth0"]["IP Address"]["match"] is True
+        finally:
+            _cleanup(path)
+
+
 class TestStatusReportUseCase:
 
     def _net(self, **overrides):
@@ -806,7 +861,12 @@ class TestTransferConfig:
         # silently corrupt (e.g. a string zone shredded into per-character rules).
         for bad in ({"interfaces": "x"}, {"interfaces": {"eth0": "x"}},
                     {"global_policy": "x"}, {"global_policy": {"trusted": "abc"}},
-                    {"system": "x"}):
+                    {"system": "x"},
+                    # scalar where a list of values is required (would crash downstream
+                    # iteration or stage a per-character-shredded list)
+                    {"ntp": {"servers": 5}}, {"network": {"global_dns": "8.8.8.8"}},
+                    {"interfaces": {"eth0": {"ip_addresses": "10.0.0.1"}}},
+                    {"interfaces": {"eth0": {"dns_servers": "8.8.8.8"}}}):
             bad_fd, bad_path = tempfile.mkstemp(suffix=".json")
             os.close(bad_fd)
             with open(bad_path, "w") as f:
