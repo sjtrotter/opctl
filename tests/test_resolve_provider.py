@@ -39,8 +39,21 @@ class TestResolveProvider:
         assert isinstance(result, _AvailableProvider)
 
     def test_auto_raises_when_none_available(self):
-        with pytest.raises(RuntimeError, match="No available provider"):
-            resolve_provider("auto", [_UnavailableProvider])
+        with pytest.raises(RuntimeError, match="No firewall backend is available"):
+            resolve_provider("auto", [_UnavailableProvider], "firewall")
+
+    def test_auto_error_is_actionable(self):
+        # Names the concern, lists what it looked for, and points to the flag.
+        with pytest.raises(RuntimeError) as exc:
+            resolve_provider("auto", [_UnavailableProvider], "firewall")
+        msg = str(exc.value)
+        assert "firewall" in msg
+        assert "unavailable" in msg  # the tool name it searched for
+        assert "--firewall-provider" in msg
+
+    def test_named_error_names_the_concern(self):
+        with pytest.raises(ValueError, match="firewall provider 'ghost' not found"):
+            resolve_provider("ghost", [_AvailableProvider], "firewall")
 
     def test_named_returns_correct_provider(self):
         result = resolve_provider("second", [_AvailableProvider, _SecondAvailableProvider])

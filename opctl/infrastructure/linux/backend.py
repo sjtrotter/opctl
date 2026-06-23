@@ -27,10 +27,38 @@ class LinuxBackend(ISystemAdapter, INetworkAdapter, IFirewallAdapter, INtpAdapte
 
     def __init__(self, config: Optional[BackendConfig] = None):
         cfg = config or BackendConfig()
-        self._system: ISystemAdapter = resolve_provider(cfg.system_provider, _SYSTEM_PROVIDERS)
-        self._network: INetworkAdapter = resolve_provider(cfg.network_provider, _NETWORK_PROVIDERS)
-        self._firewall: IFirewallAdapter = resolve_provider(cfg.firewall_provider, _FIREWALL_PROVIDERS)
-        self._ntp: INtpAdapter = resolve_provider(cfg.ntp_provider, _NTP_PROVIDERS)
+        # Providers are resolved lazily, per concern, on first use — so a host that
+        # lacks one backend (e.g. no firewall tool on nftables-only images) can still
+        # run commands for the other concerns, and only the unavailable concern fails.
+        self._candidates = {
+            "system": (cfg.system_provider, _SYSTEM_PROVIDERS),
+            "network": (cfg.network_provider, _NETWORK_PROVIDERS),
+            "firewall": (cfg.firewall_provider, _FIREWALL_PROVIDERS),
+            "ntp": (cfg.ntp_provider, _NTP_PROVIDERS),
+        }
+        self._resolved = {}
+
+    def _provider(self, concern: str):
+        if concern not in self._resolved:
+            preference, candidates = self._candidates[concern]
+            self._resolved[concern] = resolve_provider(preference, candidates, concern)
+        return self._resolved[concern]
+
+    @property
+    def _system(self) -> ISystemAdapter:
+        return self._provider("system")
+
+    @property
+    def _network(self) -> INetworkAdapter:
+        return self._provider("network")
+
+    @property
+    def _firewall(self) -> IFirewallAdapter:
+        return self._provider("firewall")
+
+    @property
+    def _ntp(self) -> INtpAdapter:
+        return self._provider("ntp")
 
     # --- ISystemAdapter ---
     def set_hostname(self, hostname: str) -> None:

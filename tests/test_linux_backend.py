@@ -1,18 +1,21 @@
+import pytest
 from unittest.mock import MagicMock, patch
 from opctl.infrastructure.linux.backend import LinuxBackend
 from opctl.domain.models.backend import BackendConfig
 
 
-def _make_backend(sys_p=None, net_p=None, fw_p=None):
-    sys_p = sys_p or MagicMock()
-    net_p = net_p or MagicMock()
-    fw_p = fw_p or MagicMock()
-
-    with patch("opctl.infrastructure.linux.backend.resolve_provider",
-               side_effect=[sys_p, net_p, fw_p, MagicMock()]):  # 4th = ntp (unused here)
-        backend = LinuxBackend(BackendConfig())
-
-    return backend, sys_p, net_p, fw_p
+def _make_backend(sys_p=None, net_p=None, fw_p=None, ntp_p=None):
+    # Providers resolve lazily per concern, so prime the resolution cache directly
+    # rather than depend on resolve_provider call order.
+    providers = {
+        "system": sys_p or MagicMock(),
+        "network": net_p or MagicMock(),
+        "firewall": fw_p or MagicMock(),
+        "ntp": ntp_p or MagicMock(),
+    }
+    backend = LinuxBackend(BackendConfig())
+    backend._resolved = dict(providers)
+    return backend, providers["system"], providers["network"], providers["firewall"]
 
 
 class TestLinuxBackendDelegation:
@@ -79,8 +82,44 @@ class TestLinuxBackendDelegation:
 
     def test_set_servers_delegates_to_ntp_provider(self):
         ntp_p = MagicMock()
-        with patch("opctl.infrastructure.linux.backend.resolve_provider",
-                   side_effect=[MagicMock(), MagicMock(), MagicMock(), ntp_p]):
-            backend = LinuxBackend(BackendConfig())
+        backend, _, _, _ = _make_backend(ntp_p=ntp_p)
         backend.set_servers(["0.pool.ntp.org"], True)
         ntp_p.set_servers.assert_called_once_with(["0.pool.ntp.org"], True)
+
+
+class TestLinuxBackendLazyResolution:
+    """Issue #52: a missing firewall backend (nftables-only hosts) must not crash
+    opctl or block concerns that don't use the firewall."""
+
+    def test_construction_resolves_no_provider(self):
+        # No provider should be touched until a concern is actually used, so the
+        # backend constructs even when every tool is absent from PATH.
+        with patch("opctl.infrastructure.linux.backend.resolve_provider") as resolve:
+            LinuxBackend(BackendConfig())
+            resolve.assert_not_called()
+
+    def test_missing_firewall_does_not_block_other_concerns(self):
+        # Only the firewall tools are absent; hostname (system) still resolves.
+        with patch("shutil.which", side_effect=lambda tool: None if tool in
+                   ("firewalld", "firewall-cmd", "ufw", "iptables") else "/usr/bin/" + tool):
+            backend = LinuxBackend(BackendConfig())
+            assert backend._system is not None  # system concern resolves fine
+
+    def test_firewall_operation_fails_cleanly_when_no_tool(self):
+        with patch("shutil.which", return_value=None):
+            backend = LinuxBackend(BackendConfig())
+            with pytest.raises(RuntimeError) as exc:
+                backend.flush_managed_rules()
+        msg = str(exc.value)
+        assert "firewall" in msg
+        assert "--firewall-provider" in msg  # actionable remediation hint
+
+    def test_each_concern_resolves_independently(self):
+        # A named provider that does not exist for one concern must not be resolved
+        # (and thus must not raise) unless that concern is used.
+        cfg = BackendConfig(firewall_provider="ghost")
+        with patch("shutil.which", return_value="/usr/bin/tool"):
+            backend = LinuxBackend(cfg)
+            assert backend._system is not None  # unaffected by the bad firewall name
+            with pytest.raises(ValueError, match="firewall provider 'ghost' not found"):
+                _ = backend._firewall
