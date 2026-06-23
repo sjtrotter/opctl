@@ -52,7 +52,7 @@ that carried it, and shown under the **Mission** section of `show`.
 | Field | Type | Validation |
 |---|---|---|
 | `global_dns` | list of strings | each a bare IP address |
-| `default_gateway` | string | a bare IP / CIDR |
+| `default_gateway` | string | a bare IP (next-hop host, no prefix) |
 | `ipv6_enabled` | bool | default `true` |
 | `ip_forwarding` | bool | default `false` |
 
@@ -74,7 +74,7 @@ An object keyed by interface name (e.g. `"eth0"`). Each value:
 | `mac_address` | string | `AA:BB:CC:DD:EE:FF` (`:` or `-` separators) |
 | `randomize_mac` | bool | spoof a random MAC instead of a fixed one |
 | `ip_addresses` | list of strings | each a bare IP / CIDR |
-| `gateway` | string | a bare IP / CIDR |
+| `gateway` | string | a bare IP (next-hop host, no prefix) |
 | `dns_servers` | list of strings | each a bare IP |
 | `policy` | object | per-interface firewall zones (see below) |
 

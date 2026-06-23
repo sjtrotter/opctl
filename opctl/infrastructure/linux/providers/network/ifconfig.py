@@ -44,7 +44,7 @@ class IfconfigProvider(LinuxProvider, INetworkAdapter, IProvider):
         self.validate_interface(interface)
         self.validate_ip(ip)
         if gateway:
-            self.validate_ip(gateway)
+            self.validate_gateway(gateway)
         for dns in dns_servers:
             self.validate_dns(dns)
         addr, prefix = (ip.split("/") + ["24"])[:2]

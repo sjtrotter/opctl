@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import MagicMock, mock_open, patch
 
 from opctl.domain.services.validators import (
-    validate_hostname, validate_mac, validate_ip,
+    validate_hostname, validate_mac, validate_ip, validate_gateway,
     validate_dns, validate_interface, validate_port,
 )
 
@@ -148,6 +148,28 @@ class TestValidateIp:
     def test_rejects_netsh_injection_via_ip(self):
         with pytest.raises(ValueError):
             validate_ip("10.0.0.1 & net user attacker /add")
+
+
+class TestValidateGateway:
+
+    def test_valid_ipv4(self):
+        assert validate_gateway("10.0.0.1") == "10.0.0.1"
+
+    def test_valid_ipv6(self):
+        assert validate_gateway("2001:db8::1") == "2001:db8::1"
+
+    def test_rejects_ipv4_cidr(self):
+        # A next-hop must be a bare host, never carry a prefix.
+        with pytest.raises(ValueError):
+            validate_gateway("10.0.0.1/24")
+
+    def test_rejects_ipv6_cidr(self):
+        with pytest.raises(ValueError):
+            validate_gateway("2001:db8::1/64")
+
+    def test_rejects_arbitrary_string(self):
+        with pytest.raises(ValueError):
+            validate_gateway("not-an-ip")
 
 
 class TestValidateDns:

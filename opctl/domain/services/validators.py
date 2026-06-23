@@ -42,6 +42,20 @@ def validate_ip(ip: str) -> str:
     return ip
 
 
+def validate_gateway(gateway: str) -> str:
+    """A default gateway is a single next-hop host — a bare IP, never a CIDR."""
+    # ipaddress.ip_address() accepts ints (123 -> 0.0.0.123), so guard the type first.
+    if not isinstance(gateway, str):
+        raise ValueError(f"Gateway must be a string: {gateway!r}")
+    if "/" in gateway:
+        raise ValueError(f"Gateway must be a bare host, not a CIDR: {gateway!r}")
+    try:
+        ipaddress.ip_address(gateway)
+    except ValueError:
+        raise ValueError(f"Invalid gateway address: {gateway!r}")
+    return gateway
+
+
 def validate_dns(dns: str) -> str:
     # ipaddress.ip_address() accepts ints (123 -> 0.0.0.123), so guard the type first.
     if not isinstance(dns, str):
