@@ -642,6 +642,33 @@ class TestViewStatusUseCase:
         finally:
             _cleanup(path)
 
+    def test_admin_state_is_staged_not_a_fabricated_match(self):
+        # Regression: there is no live admin-state read, so Admin State must report
+        # 'staged' and never claim a match for either intent.
+        for enabled in (True, False):
+            state = {"interfaces": {"eth0": {
+                "mode": "static", "ip_addresses": ["10.10.0.5/24"], "gateway": "10.10.0.1",
+                "dns_servers": [], "enabled": enabled,
+            }}}
+            repo, path = _tmp_repo(state)
+            sys_m = MagicMock()
+            sys_m.get_hostname.return_value = "ubuntu"
+            net_m = MagicMock()
+            net_m.get_available_interfaces.return_value = ["eth0"]
+            net_m.get_ip_address.return_value = "10.10.0.5"
+            net_m.get_mac_address.return_value = "N/A"
+            net_m.get_gateway.return_value = "10.10.0.1"
+            net_m.is_dhcp_enabled.return_value = False
+            net_m.get_dns_servers.return_value = []
+            try:
+                data = ViewStatusUseCase(repo, sys_m, net_m).execute()
+                admin_state = data["Interfaces"]["eth0"]["Admin State"]
+                assert admin_state["state"] == "staged"
+                assert admin_state["match"] is False
+                assert admin_state["staged"] == ("Up" if enabled else "Down")
+            finally:
+                _cleanup(path)
+
 
     def test_static_ip_matches_live_despite_cidr_prefix(self):
         # Staged IP carries a /prefix; the live OS value is bare. They must compare
